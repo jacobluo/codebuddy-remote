@@ -79,13 +79,15 @@ struct AppView: View {
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
-  @AppStorage("remote.chatLog.v3") private var persistedChatLog = ""
+  @AppStorage("remote.chatLog.v4") private var persistedChatLog = ""
 
   @State private var sessions: [RemoteSession] = []
   @State private var selectedSessionId = "terminal-cli"
   @State private var terminal = TerminalScreen()
   @State private var chatEntries: [ChatEntry] = []
+  @State private var expandedActivityEntryIds = Set<UUID>()
   @State private var chatUpdateToken = 0
+  @State private var shouldAutoScroll = true
   @State private var latestHandledSeq = 0
   @State private var statusText = "未连接"
   @State private var prompt = ""
@@ -94,6 +96,7 @@ struct AppView: View {
   @State private var hasLoadedPersistedChat = false
   @State private var errorMessage: String?
   @State private var streamTask: Task<Void, Never>?
+  @State private var persistTask: Task<Void, Never>?
   @State private var relayClient: RelayRemoteClient?
 
   private var connectionMode: ConnectionMode {
@@ -111,6 +114,8 @@ struct AppView: View {
   private var client: RemoteClient {
     RemoteClient(config: config)
   }
+
+  private var maxChatEntries: Int { 240 }
 
   private var workspaceText: String {
     sessions.first?.workspace ?? "codebuddy-remote"
@@ -137,7 +142,14 @@ struct AppView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.visible)
+        .simultaneousGesture(
+          DragGesture(minimumDistance: 8)
+            .onChanged { _ in
+              shouldAutoScroll = false
+            }
+        )
         .onChange(of: chatUpdateToken) {
+          guard shouldAutoScroll else { return }
           withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo("conversation-bottom", anchor: .bottom)
           }
@@ -383,7 +395,6 @@ struct AppView: View {
       Text(entry.text)
         .font(.body)
         .foregroundStyle(.primary)
-        .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     case .system:
@@ -397,79 +408,38 @@ struct AppView: View {
   }
 
   private func activityCard(_ entry: ChatEntry) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(alignment: .center, spacing: 9) {
-        Image(systemName: iconName(for: entry.role, status: entry.status))
-          .font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(tint(for: entry.role, status: entry.status))
-          .frame(width: 20)
+    let isExpanded = isActivityExpanded(entry)
+    let canExpand = isExpandableActivity(entry)
 
-        VStack(alignment: .leading, spacing: 2) {
-          Text(cardTitle(entry))
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(2)
-          if !entry.status.isEmpty {
-            Text(statusLabel(entry.status))
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
+    return VStack(alignment: .leading, spacing: 10) {
+      Button {
+        guard canExpand else { return }
+        toggleActivityExpansion(entry)
+      } label: {
+        activityCardHeader(entry, isExpanded: isExpanded, canExpand: canExpand)
+      }
+      .buttonStyle(.plain)
+      .disabled(!canExpand)
 
-        Spacer(minLength: 8)
+      if isExpanded {
+        activityCardDetails(entry)
 
-        if entry.role == .diff {
-          HStack(spacing: 6) {
-            if entry.additions > 0 {
-              Text("+\(entry.additions)")
-                .foregroundStyle(.green)
+        if entry.role == .permission, entry.status == "waiting" {
+          HStack(spacing: 8) {
+            Button("允许一次") {
+              sendControlInput("1", label: "允许一次")
             }
-            if entry.deletions > 0 {
-              Text("-\(entry.deletions)")
-                .foregroundStyle(.red)
+            Button("本次允许") {
+              sendControlInput("2", label: "本次允许")
+            }
+            Button("拒绝") {
+              sendControlInput("3", label: "拒绝")
             }
           }
           .font(.caption.weight(.semibold))
+          .buttonStyle(.bordered)
+          .disabled(!isStreaming || selectedSessionId.isEmpty)
         }
-      }
-
-      if !entry.command.isEmpty {
-        Text(entry.command)
-          .font(.system(.caption, design: .monospaced))
-          .foregroundStyle(.secondary)
-          .lineLimit(3)
-          .textSelection(.enabled)
-      } else if !entry.target.isEmpty, entry.target != entry.title {
-        Text(entry.target)
-          .font(.system(.caption, design: .monospaced))
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-          .textSelection(.enabled)
-      }
-
-      if !entry.text.isEmpty, entry.text != entry.title, entry.text != entry.command {
-        Text(entry.text)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-          .textSelection(.enabled)
-      }
-
-      if entry.role == .permission, entry.status == "waiting" {
-        HStack(spacing: 8) {
-          Button("允许一次") {
-            sendControlInput("1", label: "允许一次")
-          }
-          Button("本次允许") {
-            sendControlInput("2", label: "本次允许")
-          }
-          Button("拒绝") {
-            sendControlInput("3", label: "拒绝")
-          }
-        }
-        .font(.caption.weight(.semibold))
-        .buttonStyle(.bordered)
-        .disabled(!isStreaming || selectedSessionId.isEmpty)
       }
     }
     .padding(.horizontal, 14)
@@ -481,6 +451,78 @@ struct AppView: View {
         .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
     }
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+  }
+
+  private func activityCardHeader(
+    _ entry: ChatEntry,
+    isExpanded: Bool,
+    canExpand: Bool
+  ) -> some View {
+    HStack(alignment: .center, spacing: 9) {
+      Image(systemName: iconName(for: entry.role, status: entry.status))
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(tint(for: entry.role, status: entry.status))
+        .frame(width: 20)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(cardTitle(entry))
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(isExpanded ? 2 : 1)
+        if !entry.status.isEmpty {
+          Text(statusLabel(entry.status))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      }
+
+      Spacer(minLength: 8)
+
+      if entry.role == .diff {
+        HStack(spacing: 6) {
+          if entry.additions > 0 {
+            Text("+\(entry.additions)")
+              .foregroundStyle(.green)
+          }
+          if entry.deletions > 0 {
+            Text("-\(entry.deletions)")
+              .foregroundStyle(.red)
+          }
+        }
+        .font(.caption.weight(.semibold))
+      }
+
+      if canExpand {
+        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .contentShape(Rectangle())
+  }
+
+  @ViewBuilder
+  private func activityCardDetails(_ entry: ChatEntry) -> some View {
+    if !entry.command.isEmpty {
+      Text(entry.command)
+        .font(.system(.caption, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .lineLimit(4)
+    } else if !entry.target.isEmpty, entry.target != entry.title {
+      Text(entry.target)
+        .font(.system(.caption, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .lineLimit(3)
+    }
+
+    if !entry.text.isEmpty, entry.text != entry.title, entry.text != entry.command {
+      Text(entry.text)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .lineLimit(entry.status == "running" || entry.status == "waiting" ? nil : 8)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   private func cardTitle(_ entry: ChatEntry) -> String {
@@ -630,6 +672,11 @@ struct AppView: View {
     errorMessage = nil
     terminal = TerminalScreen()
     chatEntries.removeAll()
+    expandedActivityEntryIds.removeAll()
+    shouldAutoScroll = true
+    persistTask?.cancel()
+    persistTask = nil
+    persistedChatLog = ""
     latestHandledSeq = 0
     statusText = "正在连接"
 
@@ -687,6 +734,7 @@ struct AppView: View {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
+    shouldAutoScroll = true
     errorMessage = nil
     appendUserMessage(text)
 
@@ -796,6 +844,9 @@ struct AppView: View {
   }
 
   private func appendAssistantMessage(_ text: String) {
+    let text = sanitizedAssistantText(text)
+    guard !text.isEmpty else { return }
+
     if let last = chatEntries.last, last.role == .assistant {
       if last.text == text || last.text.hasSuffix("\n\(text)") {
         return
@@ -820,8 +871,8 @@ struct AppView: View {
       deletions: payload.deletions ?? 0
     )
 
-    if let last = chatEntries.last, isSameActivity(last, entry) {
-      chatEntries[chatEntries.count - 1] = entry
+    if let index = matchingActivityIndex(for: entry) {
+      chatEntries[index] = entry
     } else {
       chatEntries.append(entry)
     }
@@ -860,11 +911,113 @@ struct AppView: View {
   }
 
   private func isSameActivity(_ lhs: ChatEntry, _ rhs: ChatEntry) -> Bool {
-    lhs.role == rhs.role &&
-      lhs.title == rhs.title &&
-      lhs.text == rhs.text &&
-      lhs.command == rhs.command &&
-      lhs.target == rhs.target
+    guard lhs.role == rhs.role else { return false }
+    guard lhs.role != .user, lhs.role != .assistant, lhs.role != .system else {
+      return lhs.title == rhs.title && lhs.text == rhs.text
+    }
+
+    if !lhs.command.isEmpty || !rhs.command.isEmpty {
+      return lhs.command == rhs.command
+    }
+
+    if !lhs.target.isEmpty || !rhs.target.isEmpty {
+      return lhs.target == rhs.target && lhs.toolName == rhs.toolName
+    }
+
+    return lhs.title == rhs.title && lhs.toolName == rhs.toolName
+  }
+
+  private func matchingActivityIndex(for entry: ChatEntry) -> Int? {
+    if let last = chatEntries.last, isSameActivity(last, entry) {
+      return chatEntries.indices.last
+    }
+
+    guard entry.role != .user, entry.role != .assistant, entry.role != .system else {
+      return nil
+    }
+
+    return chatEntries.lastIndex { candidate in
+      isSameActivity(candidate, entry) &&
+        candidate.status == "running" &&
+        candidate.role == entry.role
+    }
+  }
+
+  private func isExpandableActivity(_ entry: ChatEntry) -> Bool {
+    switch entry.role {
+    case .tool, .command, .test, .plan, .diff, .artifact:
+      return true
+    case .permission:
+      return entry.status != "waiting"
+    case .user, .assistant, .system:
+      return false
+    }
+  }
+
+  private func isActivityExpanded(_ entry: ChatEntry) -> Bool {
+    if entry.status == "running" || entry.status == "waiting" {
+      return true
+    }
+    return expandedActivityEntryIds.contains(entry.id)
+  }
+
+  private func toggleActivityExpansion(_ entry: ChatEntry) {
+    if expandedActivityEntryIds.contains(entry.id) {
+      expandedActivityEntryIds.remove(entry.id)
+    } else {
+      expandedActivityEntryIds.insert(entry.id)
+    }
+  }
+
+  private func sanitizedAssistantText(_ text: String) -> String {
+    text
+      .components(separatedBy: .newlines)
+      .compactMap { rawLine in
+        var line = rawLine
+          .replacingOccurrences(of: #"\u{1B}\][\s\S]*?(\u{7}|\u{1B}\\)"#, with: "", options: .regularExpression)
+          .replacingOccurrences(of: #"\u{1B}\[[0-?]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
+          .replacingOccurrences(of: #"\[[?0-9;]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
+          .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if line.hasPrefix("● ") {
+          line.removeFirst(2)
+          line = line.replacingOccurrences(
+            of: #"^[A-Za-z][A-Za-z0-9_-]*\s+·\s+"#,
+            with: "",
+            options: .regularExpression
+          )
+        }
+
+        if let markerRange = line.range(of: "⎿") {
+          line = String(line[..<markerRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return shouldKeepAssistantLine(line) ? line : nil
+      }
+      .joined(separator: "\n")
+  }
+
+  private func shouldKeepAssistantLine(_ line: String) -> Bool {
+    if line.isEmpty { return false }
+    if line == "? for shortcuts" { return false }
+    if line.hasPrefix(">") { return false }
+    if line.hasPrefix("Tip:") { return false }
+    if line.hasPrefix("Bash(") || line.hasPrefix("Read(") || line.hasPrefix("Search(") { return false }
+    if line.hasPrefix("Explore ·") { return false }
+    if line.contains("Explore ·"), line.range(of: #"\b(streaming|processing|running|writing|waiting for permission)\b"#, options: .regularExpression) != nil {
+      return false
+    }
+    if line.range(of: #"^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+"#, options: .regularExpression) != nil {
+      return false
+    }
+    if line.contains("· Bash(") || line.contains("· Read(") || line.contains("· Search(") { return false }
+    if line.contains("· Edit(") || line.contains("· Write(") || line.contains("· Glob(") { return false }
+    if line.contains("Waking…") || line.contains("Sweeping…") { return false }
+    if line.contains("esc to interrupt") || line.contains("Press Shift+Tab") { return false }
+    if line.contains("────") { return false }
+    return true
   }
 
   private func loadPersistedChatIfNeeded() {
@@ -888,8 +1041,32 @@ struct AppView: View {
   }
 
   private func persistChatEntriesAndNotify() {
-    persistChatEntries()
+    trimChatEntriesIfNeeded()
     chatUpdateToken += 1
+    schedulePersistChatEntries()
+  }
+
+  private func trimChatEntriesIfNeeded() {
+    guard chatEntries.count > maxChatEntries else { return }
+    let removeCount = chatEntries.count - maxChatEntries
+    let removedIds = Set(chatEntries.prefix(removeCount).map(\.id))
+    chatEntries.removeFirst(removeCount)
+    expandedActivityEntryIds.subtract(removedIds)
+  }
+
+  private func schedulePersistChatEntries() {
+    persistTask?.cancel()
+    let snapshot = chatEntries
+    persistTask = Task {
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      guard !Task.isCancelled else { return }
+      guard let data = try? JSONEncoder().encode(snapshot),
+            let text = String(data: data, encoding: .utf8)
+      else {
+        return
+      }
+      persistedChatLog = text
+    }
   }
 }
 
