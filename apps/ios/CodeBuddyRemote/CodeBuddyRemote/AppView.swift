@@ -23,6 +23,8 @@ struct AppView: View {
     case resume
   }
 
+  @Environment(AppState.self) private var appState
+
   @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
   @AppStorage("remote.baseURL") private var baseURL = RemoteConfig.defaultValue.baseURL
   @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
@@ -42,6 +44,7 @@ struct AppView: View {
   @State private var latestHandledSeq = 0
   @State private var statusText = "未连接"
   @State private var prompt = ""
+  @State private var pairingURLText = ""
   @State private var isStreaming = false
   @State private var isSettingsPresented = false
   @State private var isPairingScannerPresented = false
@@ -139,6 +142,11 @@ struct AppView: View {
     }
     .sheet(isPresented: $isPairingScannerPresented) {
       pairingScannerSheet
+    }
+    .onChange(of: appState.pendingPairingCode) {
+      guard let code = appState.pendingPairingCode else { return }
+      handlePairingCode(code)
+      appState.pendingPairingCode = nil
     }
   }
 
@@ -324,6 +332,18 @@ struct AppView: View {
           } label: {
             Label("扫码绑定", systemImage: "qrcode.viewfinder")
           }
+
+          TextField("粘贴 Pairing URL", text: $pairingURLText)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
+
+          Button {
+            handlePairingCode(pairingURLText)
+          } label: {
+            Label("使用 Pairing URL", systemImage: "link.badge.plus")
+          }
+          .disabled(pairingURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
 
         Section("Session") {
@@ -355,7 +375,7 @@ struct AppView: View {
   private var pairingScannerSheet: some View {
     NavigationStack {
       QRCodeScannerView(
-        onScan: handleScannedPairingCode,
+        onScan: handlePairingCode,
         onError: { message in
           errorMessage = message
           isPairingScannerPresented = false
@@ -444,10 +464,11 @@ struct AppView: View {
     }
   }
 
-  private func handleScannedPairingCode(_ code: String) {
+  private func handlePairingCode(_ code: String) {
     do {
-      let payload = try PairingPayload.parse(code)
+      let payload = try PairingPayload.parse(code.trimmingCharacters(in: .whitespacesAndNewlines))
       applyPairingPayload(payload)
+      pairingURLText = ""
       isPairingScannerPresented = false
       isSettingsPresented = false
       connect()

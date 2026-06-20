@@ -186,6 +186,14 @@ codebuddy-remote
 
 如果使用扫码绑定，二维码会携带 Relay URL、Relay token 和短期配对码；扫码后 App 会自动切到 Relay 模式并连接。
 
+iOS 模拟器不能直接使用 Mac 摄像头扫码，可以复制终端里二维码下方的 `Pairing URL`，然后用 deep link 打开：
+
+```sh
+xcrun simctl openurl booted 'cbr://pair?...'
+```
+
+也可以在 App 的连接设置里把 `Pairing URL` 粘贴到 `粘贴 Pairing URL` 输入框。
+
 Relay 只接受 `command`、`event`、`response` 三类应用层 payload，不暴露本地 HTTP 端口，也不提供任意 TCP 转发。手机端的终端输入也被限制为单个审批控制键，例如 `1` / `2` / `3`，不能通过该接口发送任意 shell 文本。
 
 ## iOS App
