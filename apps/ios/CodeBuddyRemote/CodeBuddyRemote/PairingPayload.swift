@@ -2,7 +2,6 @@ import Foundation
 
 struct PairingPayload: Equatable {
   enum Mode: String {
-    case local
     case relay
   }
 
@@ -30,8 +29,6 @@ struct PairingPayload: Equatable {
   }
 
   let mode: Mode
-  let baseURL: String
-  let token: String
   let relayURL: String
   let relayToken: String
   let pairingCode: String
@@ -70,34 +67,16 @@ struct PairingPayload: Equatable {
       throw ParseError.expired
     }
 
-    switch mode {
-    case .local:
-      return PairingPayload(
-        mode: mode,
-        baseURL: try required("baseURL", in: query),
-        token: try required(query["bindToken"] == nil ? "token" : "bindToken", in: query),
-        relayURL: "",
-        relayToken: "",
-        pairingCode: "",
-        pairingSecret: "",
-        workspace: query["workspace"] ?? "",
-        host: query["host"] ?? "",
-        expiresAt: expiresAt
-      )
-    case .relay:
-      return PairingPayload(
-        mode: mode,
-        baseURL: "",
-        token: "",
-        relayURL: try required("relayURL", in: query),
-        relayToken: query["relayToken"] ?? "",
-        pairingCode: try required("pairingCode", in: query),
-        pairingSecret: query["pairingSecret"] ?? query["relayToken"] ?? "",
-        workspace: query["workspace"] ?? "",
-        host: query["host"] ?? "",
-        expiresAt: expiresAt
-      )
-    }
+    return PairingPayload(
+      mode: mode,
+      relayURL: try required("relayURL", in: query),
+      relayToken: query["relayToken"] ?? "",
+      pairingCode: try required("pairingCode", in: query),
+      pairingSecret: query["pairingSecret"] ?? query["relayToken"] ?? "",
+      workspace: query["workspace"] ?? "",
+      host: query["host"] ?? "",
+      expiresAt: expiresAt
+    )
   }
 
   private static func required(_ key: String, in query: [String: String]) throws -> String {

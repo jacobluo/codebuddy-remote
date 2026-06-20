@@ -10,26 +10,27 @@ CodeBuddy Remote 的安全目标是让手机可以控制本地 CodeBuddy session
 
 - CodeBuddy CLI / IDE 仍是 session owner，完整 workspace、上下文、登录态和权限系统都留在 Mac 本地。
 - iOS App 只做控制端：发送 prompt、查看 normalized events、审批当前 permission、中断和恢复任务。
-- Local Host 只暴露白名单 API，不提供任意 shell、任意文件读写或任意 IDE command。
+- 产品上只保留 Relay 模式；Local Host 是 Mac 端内部控制面，不再作为手机端连接方式。
 - Relay 只转发 CodeBuddyRemote 协议消息，不做通用 TCP 端口穿透，不保存 prompt、diff、terminal output。
 - 配对必须显式、短期有效、可撤销，并尽量减少长期共享 token 的使用。
 
 ## 术语
 
-- Local Host：`codebuddy-remote` 启动的本地 HTTP/SSE 控制面。
-- Relay：公网或内网中转服务，只转发应用层 command/event/response。
-- Local Token：Mac 启动时生成或由环境变量提供的本机管理 token，不进入扫码 Pairing URL。
-- Device Credential：iOS App 生成的 `deviceId + deviceSecret`，用于绑定后的请求签名。
+- Local Host：`codebuddy-remote` 启动的本地 HTTP/SSE 控制面，只供 Mac 端内部 adapter、测试和管理 API 使用。
+- Relay：公网或内网中转服务，只转发应用层 `encrypted` / `command` / `event` / `response` payload。
+- Relay Token：Mac host 注册 Relay 时使用的服务端 token，不进入扫码 Pairing URL。
+- Device Credential：iOS App 生成的 `deviceId + deviceSecret`，用于 Relay 设备登记、HMAC 重连和本地持久身份。
 - Pairing URL：`cbr://pair?...`，由 Mac 端二维码承载，短期有效。
 
 ## 信任边界
 
 ```text
 iOS App
-  | Local: HTTP/SSE + HMAC device signature
-  | Relay: WebSocket + host relay token + client pairing code/secret
+  | Relay WebSocket + pairing code/secret + device HMAC + E2E encrypted payload
   v
-Local Host / Relay
+codebuddy-relay
+  v
+Mac codebuddy-remote Local Host
   v
 TerminalCliAdapter
   v
@@ -38,129 +39,11 @@ TerminalCliAdapter
 
 边界说明：
 
-- iOS App 到 Local Host 是不可信网络边界。即便是局域网，也不能默认信任同网设备。
-- iOS App 到 Relay 是公网边界。短期 pairing code 和 pairing secret 只证明可以加入转发会话，不代表可以直接访问本地 HTTP API。
+- iOS App 到 Relay 是公网边界。短期 pairing code 和 pairing secret 只证明可以加入转发会话，不代表可以直接访问 Mac 本地 HTTP API。
+- Relay 到 Mac Local Host 是 Mac 端内部控制边界。产品上手机不直接连接 Local Host。
 - Local Host 到 CodeBuddy CLI 是本机进程边界。手机输入只能被归一化成白名单 command，再由 adapter 写入已有 CLI session。
 
-## Local 模式登录和绑定流程
-
-Local 模式用于手机和 Mac 在同一局域网，或 iOS 模拟器访问本机。
-
-### 1. Mac 启动
-
-用户在目标 workspace 执行：
-
-```sh
-codebuddy-remote
-```
-
-启动后 Mac 端会：
-
-- 启动长期驻留的 `codebuddy` CLI。
-- 启动 Local Host，默认端口 `17320`。
-- 生成或读取 `CODEBUDDY_REMOTE_TOKEN`。
-- 生成或读取一次性 `CODEBUDDY_REMOTE_BIND_TOKEN`。
-- 生成短期 Pairing URL。
-- 打印二维码和 Pairing URL。
-
-Pairing URL 包含：
-
-- `mode=local`
-- `baseURL`
-- `bindToken`
-- `workspace`
-- `host`
-- `expiresAt`
-
-### 2. iOS 扫码
-
-iOS App 扫描二维码或粘贴 Pairing URL 后：
-
-- 校验 `expiresAt`。
-- 切换到 Local 模式。
-- 写入 `baseURL` 和一次性 bind token。
-- 准备绑定当前设备。
-
-### 3. 设备绑定
-
-iOS App 生成或复用本机凭证：
-
-```text
-deviceId     随机 UUID
-deviceSecret 32 字节随机数，经 base64url 编码
-deviceName   当前 iOS 设备名
-```
-
-iOS App 使用一次性 bind token 调用：
-
-```http
-POST /api/devices/bind
-Authorization: Bearer <bind-token>
-Content-Type: application/json
-
-{
-  "deviceId": "...",
-  "deviceSecret": "...",
-  "deviceName": "..."
-}
-```
-
-Mac 端把绑定设备保存到：
-
-```text
-~/.codebuddy-remote/devices.json
-```
-
-也可以通过环境变量覆盖：
-
-```sh
-CODEBUDDY_REMOTE_DEVICE_STORE_FILE=/path/to/devices.json codebuddy-remote
-```
-
-iOS 端把 `deviceSecret` 保存到 Keychain，使用 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`。
-
-绑定成功后，Mac 端会消费该 bind token。同一个 bind token 再次用于 `/api/devices/bind` 会被拒绝。`CODEBUDDY_REMOTE_TOKEN` 不进入 Local Pairing URL，只保留为本机管理 token。
-
-### 4. 绑定后的请求认证
-
-绑定成功后，Local API 请求不再依赖 URL query token，改用设备签名头：
-
-```http
-X-CodeBuddy-Device-Id: <deviceId>
-X-CodeBuddy-Timestamp: <epoch-ms>
-X-CodeBuddy-Nonce: <uuid>
-X-CodeBuddy-Signature: <hmac>
-```
-
-签名文本：
-
-```text
-<method>
-<path>
-<raw-body>
-<timestamp>
-<nonce>
-```
-
-签名算法：
-
-```text
-HMAC-SHA256(deviceSecret, signingText) -> base64url
-```
-
-Mac 端校验：
-
-- `deviceId` 存在且未撤销。
-- `timestamp` 在 5 分钟窗口内。
-- `nonce` 在 5 分钟窗口内未被使用过。
-- HMAC 签名匹配。
-- POST 请求按原始 request body 验签，避免 JSON 编码差异。
-
-正常扫码绑定后的 iOS 请求会使用设备签名。`Local Token` 只用于本机管理 API，例如列出或撤销设备。
-
-## Relay 模式登录流程
-
-Relay 模式用于手机无法直接访问 Mac 局域网地址时。
+## 统一 Relay 登录流程
 
 ### 1. 启动 Relay
 
@@ -172,14 +55,14 @@ CODEBUDDY_RELAY_TOKEN=<relay-token> npm run start:relay
 
 Relay 只接受 CodeBuddyRemote 协议 payload：
 
-- `command`
-- `event`
-- `response`
 - `encrypted`，正式 Mac/iOS 通道使用，内部封装加密后的 `command` / `event` / `response`
+- `command` / `event` / `response`，兼容测试和老客户端路径
 
 Relay 不提供任意 TCP 转发，也不暴露 Mac 的 Local HTTP 端口。
 
 ### 2. Mac 加入 Relay
+
+用户在目标 workspace 执行：
 
 ```sh
 CODEBUDDY_REMOTE_RELAY_URL=wss://<relay-domain>/relay \
@@ -187,7 +70,13 @@ CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
 codebuddy-remote
 ```
 
-Mac 端生成短期 pairing code，并通过 Relay 注册 host。
+Mac 端会：
+
+- 启动长期驻留的 `codebuddy` CLI。
+- 启动内部 Local Host，默认端口 `17320`。
+- 通过 Relay 注册 host。
+- 生成短期 Relay Pairing URL。
+- 打印二维码和 Pairing URL。
 
 Pairing URL 包含：
 
@@ -206,17 +95,36 @@ Pairing URL 包含：
 iOS App 扫码后：
 
 - 校验 `expiresAt`。
-- 切换到 Relay 模式。
+- 写入 Relay URL、配对码和配对密钥。
+- 生成或复用本机设备凭证。
 - 使用 `relayURL + pairingCode + pairingSecret` 加入对应 host。
 - Relay 配对码默认短期有效，已加入后不能被第二个 client 复用。
 
-当前 Relay 模式把 server token 限定在 Mac host 通道；iOS client 使用短期 pairing secret 首次加入会话，业务 `frame` 不再携带 relay token。
+iOS App 生成或复用本机凭证：
+
+```text
+deviceId     随机 UUID
+deviceSecret 32 字节随机数，经 base64url 编码
+deviceName   当前 iOS 设备名
+```
 
 首次或带有效 pairing secret 的 Relay join 会提交本机 `deviceId + deviceSecret`，Relay 在 pairing secret 校验通过后登记该设备。设备登记后，同一设备可在 pairing code 过期后用 `relay.join` HMAC 签名重新加入，不再依赖短期 pairing secret。Relay 对设备 join nonce 做窗口内防重放。
 
+iOS 端把 `deviceSecret` 保存到 Keychain，使用 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`。
+
+### 4. 端到端加密
+
+Mac host 和 iOS client 在 Relay join 阶段交换临时公钥：
+
+```text
+P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305
+```
+
+之后正式 Mac/iOS 通道把 `command`、`event`、`response` 封装到 `encrypted` payload。Relay 只校验信封结构并转发密文，看不到 prompt、terminal output、diff 或 response 正文。
+
 ## API 权限边界
 
-当前允许的 Local API：
+当前允许的内部 Local API：
 
 - `GET /api/sessions`
 - `GET /api/sessions/:id/state`
@@ -246,8 +154,8 @@ iOS App 扫码后：
 
 ### iOS
 
-- 连接配置保存在 `AppStorage`。
-- Local `deviceSecret` 保存在 Keychain。
+- Relay 连接配置保存在 `AppStorage`。
+- `deviceSecret` 保存在 Keychain。
 - 聊天展示缓存保存在本地 AppStorage，只用于 UI 恢复。
 
 ### Mac
@@ -275,65 +183,41 @@ iOS App 扫码后：
 ## 当前已有控制
 
 - Pairing URL 带过期时间。
+- Pairing URL 只生成 `mode=relay`；iOS App 会拒绝 `mode=local`。
+- `codebuddy-remote` 缺少 `CODEBUDDY_REMOTE_RELAY_URL` 时不会生成配对二维码。
 - Relay pairing code / pairing secret 短期有效，且不能被多个 client 复用。
 - 公网 Relay 要求 token，除非显式设置本机调试开关。
 - Relay token 只用于 Mac host 注册，不进入 iOS 二维码和业务 frame。
 - Relay 支持登记后的设备用 HMAC 重新加入，并对 join nonce 做防重放。
 - 正式 Mac/iOS Relay 通道使用应用层 E2E：`P-256 KeyAgreement + HKDF-SHA256 + ChaCha20-Poly1305`。
 - Relay payload 做类型白名单校验；E2E 模式下 Relay 只校验 `encrypted` 信封结构，不读取内部正文。
-- Local 绑定后支持设备级 HMAC 请求签名。
-- Local 设备签名带 nonce replay cache，同一窗口内重复 nonce 会被拒绝。
-- Local Pairing URL 使用一次性 bind token，绑定成功后立即失效。
 - Mac 端支持设备列表、重命名和撤销 API。
 - Mac 端写入安全审计 JSONL，记录绑定、prompt 摘要、审批输入、中断/恢复和事件流连接，并提供 `GET /api/audit` 导出。
 - Local 管理 API 要求本机来源，带非本机 `X-Forwarded-For` 会被拒绝。
 - 设备密钥保存在 iOS Keychain。
 - 设备列表保存在 Mac 本地。
-- iOS 连接设置显示当前 mode、host、workspace 和绑定状态。
+- iOS 连接设置显示当前 host、workspace 和绑定状态。
 - 终端输入接口只接受审批控制键。
 - 历史记录不保存原始 TUI 刷新输出。
 
 ## 已知缺口
 
-- Local Host 当前是 HTTP，局域网内依赖 HMAC 请求签名保护认证完整性，未提供传输层加密。
 - Relay 仍可看到路由元数据，例如 pairing code、host/client 连接状态和 encrypted frame 尺寸/频率；正式 Mac/iOS 通道的 payload 正文已加密。
 - Relay 明文 `command` / `event` / `response` 路径仍保留用于兼容测试和老客户端；生产使用应走当前 Mac/iOS E2E 通道。
 - 安全审计日志已有独立文件和导出 API，但还没有独立可视化页面。
-- Local Pairing URL 中携带一次性 bind token；Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
+- Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
 
 ## 下一步安全任务
 
-1. 评估 Local 模式 mTLS、Noise、WebSocket over TLS 或局域网 HTTPS 的成本。
+1. 评估是否移除 Relay 明文兼容路径，或增加配置项强制 Relay 只允许 `encrypted` payload。
 2. 为审计日志增加独立可视化页面。
-3. 评估是否移除 Relay 明文兼容路径，或增加配置项强制 Relay 只允许 `encrypted` payload。
-
-## Local 传输加密评估
-
-当前 Local 模式先采用 HTTP + 设备 HMAC 签名：
-
-- 优点：实现简单，扫码后不需要安装证书；请求身份、完整性和防重放已经覆盖。
-- 不足：局域网内被动监听者仍可能看到 prompt、事件和状态内容。
-
-短期建议保持 HTTP + HMAC，并提示用户只在可信局域网使用。产品化前再选择以下方案之一：
-
-- `HTTPS + 自签 CA`：浏览器生态成熟，但 iOS 信任链和证书安装流程重。
-- `mTLS`：身份强，但移动端证书生命周期和撤销管理复杂。
-- `Noise / libsodium`：适合应用层 E2E，协议更可控，但需要自己维护握手、密钥轮换和调试工具。
-
-Relay 模式已经采用应用层 E2E，因为 Relay 不能持有解密能力；Local 模式可继续用 HMAC 做身份/完整性，并在真实分发前决定是否上 TLS。
+3. 为设备管理增加 iOS 侧查看入口。
 
 ## 验收清单
 
-- 扫码 Local 二维码后，App 能自动绑定设备并连接。
-- 绑定后的 `GET /api/sessions` 不需要 URL token。
-- 绑定后的 `POST /api/sessions/:id/messages` 使用设备签名通过。
-- 修改 body、timestamp、nonce 或 signature 后请求被拒绝。
-- 同一个 signed nonce 不能重复使用。
-- `GET /api/devices` 不返回 `deviceSecret`。
-- `POST /api/devices/:id/revoke` 后设备签名立即失效。
-- `PATCH /api/devices/:id` 可重命名设备。
-- `GET /api/audit` 可导出审计记录。
-- 非本机来源不能使用 Local 管理 token 调管理 API。
+- Mac 缺少 `CODEBUDDY_REMOTE_RELAY_URL` 时不生成 Pairing URL。
+- Pairing URL 只包含 `mode=relay`。
+- iOS 扫码 Local 旧二维码会拒绝。
 - Relay 未配置 token 时不能公网启动。
 - 同一个 Relay pairing code 不能被两个 client 复用。
 - Relay 设备登记后可用 HMAC 重新加入，且同一 join nonce 不能重放。

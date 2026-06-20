@@ -59,17 +59,13 @@ final class ChatModelsTests: XCTestCase {
     XCTAssertEqual(decrypted["name"] as? String, "listSessions")
   }
 
-  func testPairingPayloadParsesLocalURL() throws {
-    let payload = try PairingPayload.parse(
-      "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&bindToken=bind-once&workspace=drink&host=MacBook&expiresAt=2000",
-      now: Date(timeIntervalSince1970: 1)
+  func testPairingPayloadRejectsLocalURL() {
+    XCTAssertThrowsError(
+      try PairingPayload.parse(
+        "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&bindToken=bind-once&workspace=drink&host=MacBook&expiresAt=2000",
+        now: Date(timeIntervalSince1970: 1)
+      )
     )
-
-    XCTAssertEqual(payload.mode, .local)
-    XCTAssertEqual(payload.baseURL, "http://192.168.1.23:17320")
-    XCTAssertEqual(payload.token, "bind-once")
-    XCTAssertEqual(payload.workspace, "drink")
-    XCTAssertEqual(payload.host, "MacBook")
   }
 
   func testPairingPayloadParsesRelayURL() throws {

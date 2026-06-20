@@ -43,7 +43,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>CodeBuddy Remote connects to your Mac on the local network to control the local CodeBuddy CLI session.</string>
+	<string>CodeBuddy Remote connects through your configured Relay to control the local CodeBuddy CLI session.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>CodeBuddy Remote uses the camera to scan the pairing QR code printed by codebuddy-remote.</string>
 	<key>UIApplicationSceneManifest</key>

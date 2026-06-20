@@ -48,17 +48,17 @@ Local Host / Relay = 安全连接与事件转发层
 
 ## 本地运行
 
-当前主入口是 `codebuddy-remote`：在目标项目目录执行它，就等价于在该目录启动一个真实的前台 `codebuddy` CLI，同时额外开启给 iOS App 使用的 Local API。
+当前主入口是 `codebuddy-remote`：在目标项目目录执行它，就等价于在该目录启动一个真实的前台 `codebuddy` CLI，同时通过 Relay 暴露给 iOS App。产品上只保留 Relay 模式；Local Host 仍作为 Mac 端内部控制面存在，不再作为手机端连接方式。
 
 ```sh
 npm test
-codebuddy-remote
+CODEBUDDY_REMOTE_RELAY_URL=ws://127.0.0.1:17330/relay codebuddy-remote
 ```
 
-默认地址：
+本地调试时先启动 Relay：
 
-```text
-http://127.0.0.1:17320
+```sh
+npm run start:relay
 ```
 
 如果还没有安装本地命令，可以在本仓库执行一次：
@@ -73,18 +73,10 @@ npm link
 
 ```sh
 cd /Users/robiluo/aicoding/drink
-codebuddy-remote
+CODEBUDDY_REMOTE_RELAY_URL=ws://127.0.0.1:17330/relay codebuddy-remote
 ```
 
-启动后终端会打印 Local API 候选地址、管理 token、一次性 bind token 和一张配对二维码。推荐在 iOS App 里点 `扫码绑定` 直接扫描二维码，App 会自动填入局域网或 Relay 配置并连接。局域网模式下，手机和电脑需要在同一局域网；如果不扫码，也可以在 iOS App 里手动填写形如：
-
-```text
-http://<电脑局域网IP>:17320
-```
-
-手动管理 API 时 token 填启动时打印的 `Local Token`。二维码内容是短期 `cbr://pair` 配对 URL，包含连接地址、一次性 `bindToken`、workspace、host 和过期时间；`bindToken` 只允许完成一次设备绑定，绑定成功后立即失效。
-
-Local 模式扫码后，iOS App 会生成本机 `deviceId + deviceSecret`，把 `deviceSecret` 存入 iOS Keychain，并调用 Mac 端 `/api/devices/bind` 绑定设备。绑定成功后，Local API 请求会带 `X-CodeBuddy-Device-*` 签名头，Mac 端会校验 HMAC 签名和 nonce 防重放；`Local Token` 只保留为本机管理 token。
+启动后终端会打印 Relay 地址、短期配对码和一张配对二维码。推荐在 iOS App 里点 `扫码绑定` 直接扫描二维码，App 会自动填入 Relay 配置并连接。二维码内容是短期 `cbr://pair` 配对 URL，包含 Relay URL、配对码、配对密钥、workspace、host 和过期时间。
 
 `codebuddy-remote` 会由 Local Host 通过伪终端启动并复用一个长期驻留的 `codebuddy` 进程。这个 CodeBuddy 进程显示在当前终端里，所以本地仍能看到 CLI 界面输出并继续键盘交互；iOS App 会把 prompt 写入同一个终端 session。当前工作目录就是 CodeBuddy workspace。
 
@@ -172,7 +164,7 @@ CODEBUDDY_REMOTE_ADAPTER=real CODEBUDDY_REMOTE_PORT=17321 npm run start:local-ho
 
 ## Relay 模式
 
-Relay 是应用层中转服务，适合手机和 Mac 不在同一个局域网时使用：
+Relay 是唯一的手机连接方式：
 
 ```text
 iOS App <-> codebuddy-relay <-> Mac codebuddy-remote <-> 本地 codebuddy CLI
@@ -216,7 +208,7 @@ CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
 codebuddy-remote
 ```
 
-`CODEBUDDY_REMOTE_RELAY_TOKEN` 只用于 Mac host 向 Relay 注册，不会写入二维码。启动后 Mac 终端会打印 `Pairing` 和二维码；二维码里包含 Relay 地址、短期配对码和短期配对密钥。配对密钥默认随机生成；需要固定时可设置 `CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET`。配对码默认有效 120 秒，并且已配对后不再允许第二台手机复用同一个配对码。iOS App 首次加入 Relay 时会登记本机设备，后续同一设备可以用设备级 HMAC 重连。手动连接时，在 iOS App 里切到 `Relay` 模式并填写 Relay 地址、配对码和配对密钥即可。
+`CODEBUDDY_REMOTE_RELAY_TOKEN` 只用于 Mac host 向 Relay 注册，不会写入二维码。启动后 Mac 终端会打印 `Pairing` 和二维码；二维码里包含 Relay 地址、短期配对码和短期配对密钥。配对密钥默认随机生成；需要固定时可设置 `CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET`。配对码默认有效 120 秒，并且已配对后不再允许第二台手机复用同一个配对码。iOS App 首次加入 Relay 时会登记本机设备，后续同一设备可以用设备级 HMAC 重连。手动连接时，在 iOS App 里填写 Relay 地址、配对码和配对密钥即可。
 
 如果使用扫码绑定，App 会自动填入 Relay URL、配对码和配对密钥，并连接到对应 Mac host。
 
@@ -238,7 +230,7 @@ Relay 只接受 CodeBuddyRemote 应用层 payload：正式 Mac/iOS 通道会把 
 apps/ios/CodeBuddyRemote/CodeBuddyRemote.xcodeproj
 ```
 
-打开工程后运行 `CodeBuddyRemote` target。推荐使用右上角菜单或连接设置里的 `扫码绑定` 扫描 Mac 端 `codebuddy-remote` 打印的二维码。局域网模式下，也可以手动输入 Mac 端打印的局域网 URL 和一次性 bind token；Relay 模式下，也可以手动输入 Relay URL、配对码和配对密钥。App 会订阅事件流、显示终端输出，并把手机输入发送到同一个长期驻留的 CodeBuddy CLI session。连接设置会显示当前 mode、host、workspace 和绑定状态。
+打开工程后运行 `CodeBuddyRemote` target。推荐使用右上角菜单或连接设置里的 `扫码绑定` 扫描 Mac 端 `codebuddy-remote` 打印的二维码；也可以手动输入 Relay URL、配对码和配对密钥。App 会订阅事件流、显示终端输出，并把手机输入发送到同一个长期驻留的 CodeBuddy CLI session。连接设置会显示当前 host、workspace 和绑定状态。
 
 本仓库的命令行编译验证：
 

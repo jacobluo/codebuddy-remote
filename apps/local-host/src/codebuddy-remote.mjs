@@ -32,30 +32,15 @@ export function createRunConfig({
   };
 }
 
-export function buildStartupUrls({
-  port,
-  host,
-  interfaces = os.networkInterfaces(),
-}) {
-  const urls = [`http://127.0.0.1:${port}`];
-  if (host === "127.0.0.1" || host === "localhost") return urls;
-
-  for (const entries of Object.values(interfaces)) {
-    for (const entry of entries || []) {
-      if (entry.family !== "IPv4" || entry.internal) continue;
-      urls.push(`http://${entry.address}:${port}`);
-    }
-  }
-  return [...new Set(urls)];
-}
-
 export function buildPairingPayload({
   config,
-  urls,
   hostName = os.hostname(),
   now = Date.now(),
   ttlMs = 120000,
 }) {
+  if (!config.relayUrl) {
+    throw new Error("CODEBUDDY_REMOTE_RELAY_URL is required");
+  }
   const workspace = path.basename(config.cwd) || config.cwd;
   const common = {
     v: "1",
@@ -64,21 +49,12 @@ export function buildPairingPayload({
     host: hostName,
   };
 
-  if (config.relayUrl) {
-    return {
-      ...common,
-      mode: "relay",
-      relayURL: config.relayUrl,
-      pairingCode: config.pairingCode,
-      pairingSecret: config.relayPairingSecret,
-    };
-  }
-
   return {
     ...common,
-    mode: "local",
-    baseURL: selectPairingBaseUrl(urls),
-    bindToken: config.bindToken,
+    mode: "relay",
+    relayURL: config.relayUrl,
+    pairingCode: config.pairingCode,
+    pairingSecret: config.relayPairingSecret,
   };
 }
 
@@ -109,9 +85,9 @@ Environment:
   CODEBUDDY_CLI_PATH              CodeBuddy executable, default: codebuddy
   CODEBUDDY_REMOTE_HOST           Local HTTP host, default: 0.0.0.0
   CODEBUDDY_REMOTE_PORT           Local HTTP port, default: 17320
-  CODEBUDDY_REMOTE_TOKEN          Local HTTP token, generated when omitted
-  CODEBUDDY_REMOTE_BIND_TOKEN     One-time local device bind token, generated when omitted
-  CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, optional
+  CODEBUDDY_REMOTE_TOKEN          Local management token, generated when omitted
+  CODEBUDDY_REMOTE_BIND_TOKEN     Internal one-time local bind token, generated when omitted
+  CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, required for iOS pairing
   CODEBUDDY_REMOTE_RELAY_TOKEN    Relay auth token, optional
   CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET Relay client pairing secret, generated when omitted
   CODEBUDDY_REMOTE_PAIRING_CODE   Relay pairing code, generated when omitted
@@ -139,6 +115,11 @@ export async function main() {
   }
 
   const config = createRunConfig();
+  if (!config.relayUrl) {
+    console.error("[codebuddy-remote] CODEBUDDY_REMOTE_RELAY_URL is required");
+    process.exitCode = 1;
+    return;
+  }
   const adapter = new TerminalCliAdapter(createAdapterOptions(config));
   const host = createLocalHost({
     adapter,
@@ -165,30 +146,19 @@ export async function main() {
   const server = await host.listen(config.port);
   const address = server.address();
   const actualPort = address.port;
-  const urls = buildStartupUrls({
-    port: actualPort,
-    host: config.host,
-  });
-  const pairingUrl = createPairingUrl(buildPairingPayload({ config, urls }));
+  const pairingUrl = createPairingUrl(buildPairingPayload({ config }));
 
   console.log("");
   console.log("  CodeBuddy Remote");
   console.log("");
   console.log(`  Workspace   ${config.cwd}`);
-  console.log(`  Local Host  http://${config.host}:${actualPort}`);
-  console.log(`  Local Token ${config.token}`);
-  console.log(`  Bind Token  ${config.bindToken}`);
+  console.log(`  Local Host  http://${config.host}:${actualPort} (internal)`);
   console.log(`  CodeBuddy   ${config.cliPath}`);
   console.log(`  History     ${config.historyFile}`);
   console.log(`  Devices     ${config.deviceStoreFile}`);
   console.log(`  Audit       ${config.auditFile}`);
-  if (config.relayUrl) {
-    console.log(`  Relay       ${config.relayUrl}`);
-    console.log(`  Pairing     ${config.pairingCode}`);
-  }
-  console.log("");
-  console.log("  iOS app Local API candidates:");
-  for (const url of urls) console.log(`  ${url}`);
+  console.log(`  Relay       ${config.relayUrl}`);
+  console.log(`  Pairing     ${config.pairingCode}`);
   console.log("");
   console.log("  Scan with CodeBuddyRemote iOS app:");
   qrcode.generate(pairingUrl, { small: true });
@@ -248,10 +218,6 @@ function defaultAuditFile(cwd, homeDir) {
   const safeName = workspaceName.replace(/[^a-zA-Z0-9._-]+/g, "-") || "workspace";
   const hash = crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 16);
   return path.join(homeDir, ".codebuddy-remote", "audit", `${safeName}-${hash}.jsonl`);
-}
-
-function selectPairingBaseUrl(urls) {
-  return urls.find((url) => !url.includes("127.0.0.1") && !url.includes("localhost")) || urls[0] || "";
 }
 
 function safeRealpath(candidate, resolveRealpath) {

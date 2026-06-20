@@ -5,7 +5,6 @@ import test from "node:test";
 import {
   buildPairingPayload,
   createPairingUrl,
-  buildStartupUrls,
   createAdapterOptions,
   createRunConfig,
   formatHelp,
@@ -101,53 +100,28 @@ test("codebuddy-remote generates a token when one is not provided", () => {
   assert.match(config.token, /^[a-zA-Z0-9_-]{32,}$/);
 });
 
-test("startup URLs include local API candidates", () => {
-  const urls = buildStartupUrls({
-    port: 17320,
-    host: "0.0.0.0",
-    interfaces: {
-      lo0: [{ family: "IPv4", address: "127.0.0.1", internal: true }],
-      en0: [{ family: "IPv4", address: "192.168.1.23", internal: false }],
-    },
-  });
-
-  assert.deepEqual(urls, [
-    "http://127.0.0.1:17320",
-    "http://192.168.1.23:17320",
-  ]);
-});
-
-test("pairing URL encodes local connection details", () => {
-  const payload = buildPairingPayload({
-    config: {
-      cwd: "/Users/robiluo/aicoding/drink",
-      token: "local-token",
-      bindToken: "bind-once",
-      relayUrl: "",
-      relayToken: "",
-      relayPairingSecret: "pair-secret-12345",
-      pairingCode: "PAIR123",
-    },
-    urls: [
-      "http://127.0.0.1:17320",
-      "http://192.168.1.23:17320",
-    ],
-    hostName: "DONGSHUILUO-MB5",
-    now: 1000,
-    ttlMs: 120000,
-  });
-  const url = new URL(createPairingUrl(payload));
-
-  assert.equal(url.protocol, "cbr:");
-  assert.equal(url.hostname, "pair");
-  assert.equal(url.searchParams.get("v"), "1");
-  assert.equal(url.searchParams.get("mode"), "local");
-  assert.equal(url.searchParams.get("baseURL"), "http://192.168.1.23:17320");
-  assert.equal(url.searchParams.get("token"), null);
-  assert.equal(url.searchParams.get("bindToken"), "bind-once");
-  assert.equal(url.searchParams.get("workspace"), "drink");
-  assert.equal(url.searchParams.get("host"), "DONGSHUILUO-MB5");
-  assert.equal(url.searchParams.get("expiresAt"), "121000");
+test("pairing URL requires a relay URL", () => {
+  assert.throws(
+    () => buildPairingPayload({
+      config: {
+        cwd: "/Users/robiluo/aicoding/drink",
+        token: "local-token",
+        bindToken: "bind-once",
+        relayUrl: "",
+        relayToken: "",
+        relayPairingSecret: "pair-secret-12345",
+        pairingCode: "PAIR123",
+      },
+      urls: [
+        "http://127.0.0.1:17320",
+        "http://192.168.1.23:17320",
+      ],
+      hostName: "DONGSHUILUO-MB5",
+      now: 1000,
+      ttlMs: 120000,
+    }),
+    /CODEBUDDY_REMOTE_RELAY_URL is required/
+  );
 });
 
 test("pairing URL encodes relay connection details", () => {

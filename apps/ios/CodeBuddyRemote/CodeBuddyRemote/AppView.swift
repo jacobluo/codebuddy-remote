@@ -2,22 +2,6 @@ import SwiftUI
 
 @MainActor
 struct AppView: View {
-  private enum ConnectionMode: String, CaseIterable, Identifiable {
-    case local
-    case relay
-
-    var id: String { rawValue }
-
-    var title: String {
-      switch self {
-      case .local:
-        "局域网"
-      case .relay:
-        "Relay"
-      }
-    }
-  }
-
   private enum SessionAction {
     case interrupt
     case resume
@@ -25,9 +9,6 @@ struct AppView: View {
 
   @Environment(AppState.self) private var appState
 
-  @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
-  @AppStorage("remote.baseURL") private var baseURL = RemoteConfig.defaultValue.baseURL
-  @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayPairingSecret") private var relayPairingSecret = RelayConfig.defaultValue.pairingSecret
@@ -60,20 +41,8 @@ struct AppView: View {
   @State private var chatNotifyTask: Task<Void, Never>?
   @State private var relayClient: RelayRemoteClient?
 
-  private var connectionMode: ConnectionMode {
-    ConnectionMode(rawValue: modeRaw) ?? .relay
-  }
-
-  private var config: RemoteConfig {
-    RemoteConfig(baseURL: baseURL, token: token)
-  }
-
   private var relayConfig: RelayConfig {
     RelayConfig(relayURL: relayURL, pairingCode: pairingCode, pairingSecret: relayPairingSecret, token: relayToken)
-  }
-
-  private var client: RemoteClient {
-    RemoteClient(config: config, deviceCredential: localDeviceCredential)
   }
 
   private var maxRenderedChatEntries: Int { 80 }
@@ -94,15 +63,7 @@ struct AppView: View {
   }
 
   private var bindingStateText: String {
-    switch connectionMode {
-    case .local:
-      if let credential = localDeviceCredential {
-        return "已绑定 \(credential.deviceName)"
-      }
-      return "未绑定"
-    case .relay:
-      return relayPairingSecret.isEmpty ? "未配置配对密钥" : "已配置配对密钥"
-    }
+    relayPairingSecret.isEmpty ? "未配置配对密钥" : "已配置配对密钥"
   }
 
   private var conversationItems: [ConversationItem] {
@@ -196,7 +157,7 @@ struct AppView: View {
         Text("CodeBuddy")
           .font(.headline.weight(.semibold))
           .lineLimit(1)
-        Text("\(connectionMode.title) · \(workspaceText) · \(hostText)")
+        Text("Relay · \(workspaceText) · \(hostText)")
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -320,37 +281,18 @@ struct AppView: View {
     NavigationStack {
       Form {
         Section("连接") {
-          Picker("模式", selection: $modeRaw) {
-            ForEach(ConnectionMode.allCases) { mode in
-              Text(mode.title).tag(mode.rawValue)
-            }
-          }
-          .pickerStyle(.segmented)
-          .disabled(isStreaming)
+          TextField("Relay 地址", text: $relayURL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
 
-          if connectionMode == .local {
-            TextField("Mac 地址", text: $baseURL)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-              .keyboardType(.URL)
+          TextField("配对码", text: $pairingCode)
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled()
 
-            SecureField("Token", text: $token)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-          } else {
-            TextField("Relay 地址", text: $relayURL)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-              .keyboardType(.URL)
-
-            TextField("配对码", text: $pairingCode)
-              .textInputAutocapitalization(.characters)
-              .autocorrectionDisabled()
-
-            SecureField("配对密钥", text: $relayPairingSecret)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-          }
+          SecureField("配对密钥", text: $relayPairingSecret)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
         }
 
         Section("配对") {
@@ -379,7 +321,7 @@ struct AppView: View {
         }
 
         Section("当前连接") {
-          LabeledContent("模式", value: connectionMode.title)
+          LabeledContent("模式", value: "Relay")
           LabeledContent("Host", value: hostText)
           LabeledContent("Workspace", value: workspaceText)
           LabeledContent("绑定", value: bindingStateText)
@@ -446,41 +388,26 @@ struct AppView: View {
 
     streamTask = Task {
       do {
-        if connectionMode == .local {
-          sessions = try await client.listSessions()
-          selectedSessionId = sessions.first?.id ?? "terminal-cli"
-          let replay = try await client.listEvents(after: 0, limit: initialReplayEventLimit)
-          for event in replay.events {
-            handle(event)
-          }
-          statusText = selectedSessionId.isEmpty ? "没有可用 session" : "已连接 \(selectedSessionId)"
-          isStreaming = true
+        let credential = localDeviceCredential ?? DeviceCredential.generate()
+        if localDeviceCredential == nil {
+          try? DeviceCredentialStore.save(credential)
+          localDeviceCredential = credential
+        }
+        let relay = RelayRemoteClient(config: relayConfig, deviceCredential: credential)
+        relayClient = relay
+        let eventStream = relay.streamEvents()
+        try await relay.connect()
+        sessions = try await relay.listSessions()
+        selectedSessionId = sessions.first?.id ?? "terminal-cli"
+        let replay = try await relay.listEvents(after: 0, limit: initialReplayEventLimit)
+        for event in replay.events {
+          handle(event)
+        }
+        statusText = selectedSessionId.isEmpty ? "没有可用 session" : "Relay 已连接 \(selectedSessionId)"
+        isStreaming = true
 
-          for try await event in client.streamEvents(after: replay.latestSeq) {
-            handle(event)
-          }
-        } else {
-          let credential = localDeviceCredential ?? DeviceCredential.generate()
-          if localDeviceCredential == nil {
-            try? DeviceCredentialStore.save(credential)
-            localDeviceCredential = credential
-          }
-          let relay = RelayRemoteClient(config: relayConfig, deviceCredential: credential)
-          relayClient = relay
-          let eventStream = relay.streamEvents()
-          try await relay.connect()
-          sessions = try await relay.listSessions()
-          selectedSessionId = sessions.first?.id ?? "terminal-cli"
-          let replay = try await relay.listEvents(after: 0, limit: initialReplayEventLimit)
-          for event in replay.events {
-            handle(event)
-          }
-          statusText = selectedSessionId.isEmpty ? "没有可用 session" : "Relay 已连接 \(selectedSessionId)"
-          isStreaming = true
-
-          for try await event in eventStream {
-            handle(event)
-          }
+        for try await event in eventStream {
+          handle(event)
         }
       } catch is CancellationError {
         return
@@ -510,13 +437,7 @@ struct AppView: View {
       pairingURLText = ""
       isPairingScannerPresented = false
       isSettingsPresented = false
-      if payload.mode == .local {
-        Task {
-          await bindLocalDeviceAndConnect()
-        }
-      } else {
-        connect()
-      }
+      connect()
     } catch {
       errorMessage = error.localizedDescription
       isPairingScannerPresented = false
@@ -526,30 +447,10 @@ struct AppView: View {
   private func applyPairingPayload(_ payload: PairingPayload) {
     pairedWorkspace = payload.workspace
     pairedHost = payload.host
-    switch payload.mode {
-    case .local:
-      modeRaw = ConnectionMode.local.rawValue
-      baseURL = payload.baseURL
-      token = payload.token
-    case .relay:
-      modeRaw = ConnectionMode.relay.rawValue
-      relayURL = payload.relayURL
-      relayToken = payload.relayToken
-      pairingCode = payload.pairingCode
-      relayPairingSecret = payload.pairingSecret
-    }
-  }
-
-  private func bindLocalDeviceAndConnect() async {
-    do {
-      let credential = localDeviceCredential ?? DeviceCredential.generate()
-      try await RemoteClient(config: config).bindDevice(credential)
-      try DeviceCredentialStore.save(credential)
-      localDeviceCredential = credential
-      connect()
-    } catch {
-      errorMessage = error.localizedDescription
-    }
+    relayURL = payload.relayURL
+    relayToken = payload.relayToken
+    pairingCode = payload.pairingCode
+    relayPairingSecret = payload.pairingSecret
   }
 
   private func sendPrompt() {
@@ -563,11 +464,7 @@ struct AppView: View {
 
     Task {
       do {
-        if connectionMode == .local {
-          try await client.sendPrompt(sessionId: selectedSessionId, text: text)
-        } else {
-          try await relayClient?.sendPrompt(sessionId: selectedSessionId, text: text)
-        }
+        try await relayClient?.sendPrompt(sessionId: selectedSessionId, text: text)
         errorMessage = nil
       } catch {
         errorMessage = error.localizedDescription
@@ -584,11 +481,7 @@ struct AppView: View {
     errorMessage = nil
     Task {
       do {
-        if connectionMode == .local {
-          try await client.sendTerminalInput(sessionId: selectedSessionId, text: text, label: label)
-        } else {
-          try await relayClient?.sendTerminalInput(sessionId: selectedSessionId, text: text, label: label)
-        }
+        try await relayClient?.sendTerminalInput(sessionId: selectedSessionId, text: text, label: label)
         errorMessage = nil
       } catch {
         errorMessage = error.localizedDescription
@@ -602,17 +495,9 @@ struct AppView: View {
       do {
         switch action {
         case .interrupt:
-          if connectionMode == .local {
-            try await client.interrupt(sessionId: selectedSessionId)
-          } else {
-            try await relayClient?.interrupt(sessionId: selectedSessionId)
-          }
+          try await relayClient?.interrupt(sessionId: selectedSessionId)
         case .resume:
-          if connectionMode == .local {
-            try await client.resume(sessionId: selectedSessionId)
-          } else {
-            try await relayClient?.resume(sessionId: selectedSessionId)
-          }
+          try await relayClient?.resume(sessionId: selectedSessionId)
         }
         errorMessage = nil
       } catch {

@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		111111111111111111111101 /* CodeBuddyRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111001 /* CodeBuddyRemoteApp.swift */; };
 		111111111111111111111102 /* AppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111002 /* AppView.swift */; };
-		111111111111111111111103 /* RemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111003 /* RemoteClient.swift */; };
 		111111111111111111111104 /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111004 /* RemoteModels.swift */; };
 		111111111111111111111105 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111005 /* TerminalScreen.swift */; };
 		111111111111111111111107 /* RelayRemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111008 /* RelayRemoteClient.swift */; };
@@ -37,7 +36,6 @@
 /* Begin PBXFileReference section */
 		111111111111111111111001 /* CodeBuddyRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBuddyRemoteApp.swift; sourceTree = "<group>"; };
 		111111111111111111111002 /* AppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppView.swift; sourceTree = "<group>"; };
-		111111111111111111111003 /* RemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteClient.swift; sourceTree = "<group>"; };
 		111111111111111111111004 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		111111111111111111111005 /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
 		111111111111111111111006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -98,7 +96,6 @@
 				111111111111111111111011 /* ChatMessageViews.swift */,
 				111111111111111111111012 /* ChatInputBar.swift */,
 				111111111111111111111014 /* QRCodeScannerView.swift */,
-				111111111111111111111003 /* RemoteClient.swift */,
 				111111111111111111111008 /* RelayRemoteClient.swift */,
 				111111111111111111111017 /* RelayE2E.swift */,
 				111111111111111111111004 /* RemoteModels.swift */,
@@ -234,7 +231,6 @@
 			files = (
 				111111111111111111111101 /* CodeBuddyRemoteApp.swift in Sources */,
 				111111111111111111111102 /* AppView.swift in Sources */,
-				111111111111111111111103 /* RemoteClient.swift in Sources */,
 				111111111111111111111107 /* RelayRemoteClient.swift in Sources */,
 				111111111111111111111104 /* RemoteModels.swift in Sources */,
 				111111111111111111111105 /* TerminalScreen.swift in Sources */,
