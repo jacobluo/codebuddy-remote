@@ -35,14 +35,15 @@ final class ChatModelsTests: XCTestCase {
 
   func testPairingPayloadParsesRelayURL() throws {
     let payload = try PairingPayload.parse(
-      "cbr://pair?v=1&mode=relay&relayURL=wss%3A%2F%2Frelay.example.com%2Frelay&relayToken=relay-token&pairingCode=PAIR123&workspace=drink&host=MacBook&expiresAt=2000",
+      "cbr://pair?v=1&mode=relay&relayURL=wss%3A%2F%2Frelay.example.com%2Frelay&pairingCode=PAIR123&pairingSecret=pair-secret-12345&workspace=drink&host=MacBook&expiresAt=2000",
       now: Date(timeIntervalSince1970: 1)
     )
 
     XCTAssertEqual(payload.mode, .relay)
     XCTAssertEqual(payload.relayURL, "wss://relay.example.com/relay")
-    XCTAssertEqual(payload.relayToken, "relay-token")
+    XCTAssertEqual(payload.relayToken, "")
     XCTAssertEqual(payload.pairingCode, "PAIR123")
+    XCTAssertEqual(payload.pairingSecret, "pair-secret-12345")
     XCTAssertEqual(payload.workspace, "drink")
     XCTAssertEqual(payload.host, "MacBook")
   }

@@ -29,6 +29,7 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
       CODEBUDDY_REMOTE_TOKEN: "fixed-token",
       CODEBUDDY_REMOTE_RELAY_URL: "ws://relay.example.com/relay",
       CODEBUDDY_REMOTE_RELAY_TOKEN: "relay-token",
+      CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET: "pair-secret-12345",
       CODEBUDDY_REMOTE_PAIRING_CODE: "PAIR123",
       CODEBUDDY_REMOTE_HISTORY_FILE: "/tmp/custom-history.jsonl",
       CODEBUDDY_REMOTE_DEVICE_STORE_FILE: "/tmp/custom-devices.json",
@@ -42,6 +43,7 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
   assert.equal(config.token, "fixed-token");
   assert.equal(config.relayUrl, "ws://relay.example.com/relay");
   assert.equal(config.relayToken, "relay-token");
+  assert.equal(config.relayPairingSecret, "pair-secret-12345");
   assert.equal(config.pairingCode, "PAIR123");
   assert.equal(config.historyFile, "/tmp/custom-history.jsonl");
   assert.equal(config.deviceStoreFile, "/tmp/custom-devices.json");
@@ -114,6 +116,7 @@ test("pairing URL encodes local connection details", () => {
       token: "local-token",
       relayUrl: "",
       relayToken: "",
+      relayPairingSecret: "pair-secret-12345",
       pairingCode: "PAIR123",
     },
     urls: [
@@ -144,6 +147,7 @@ test("pairing URL encodes relay connection details", () => {
       token: "local-token",
       relayUrl: "wss://relay.example.com/relay",
       relayToken: "relay-token",
+      relayPairingSecret: "pair-secret-12345",
       pairingCode: "PAIR123",
     },
     urls: ["http://192.168.1.23:17320"],
@@ -155,8 +159,9 @@ test("pairing URL encodes relay connection details", () => {
 
   assert.equal(url.searchParams.get("mode"), "relay");
   assert.equal(url.searchParams.get("relayURL"), "wss://relay.example.com/relay");
-  assert.equal(url.searchParams.get("relayToken"), "relay-token");
+  assert.equal(url.searchParams.get("relayToken"), null);
   assert.equal(url.searchParams.get("pairingCode"), "PAIR123");
+  assert.equal(url.searchParams.get("pairingSecret"), "pair-secret-12345");
   assert.equal(url.searchParams.get("workspace"), "drink");
   assert.equal(url.searchParams.get("host"), "DONGSHUILUO-MB5");
   assert.equal(url.searchParams.get("expiresAt"), "121000");

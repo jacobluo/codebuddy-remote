@@ -88,11 +88,10 @@ export function createRelayServer({
       return;
     }
 
-    if (token && !isAuthorizedToken(frame.token, token)) {
-      throw new Error("unauthorized relay token");
-    }
-
     if (frame.type === "host.register") {
+      if (token && !isAuthorizedToken(frame.token, token)) {
+        throw new Error("unauthorized relay token");
+      }
       registerHost(ws, frame);
       return;
     }
@@ -112,6 +111,10 @@ export function createRelayServer({
 
   function registerHost(ws, frame) {
     const pairingCode = normalizePairingCode(frame.pairingCode || createPairingCode());
+    const pairingSecret = normalizeOptionalPairingSecret(frame.pairingSecret);
+    if (token && !pairingSecret) {
+      throw new Error("pairingSecret is required when relay token is configured");
+    }
     const previous = hostsByPairingCode.get(pairingCode);
     const clients = previous?.clients ?? new Set();
     const now = Date.now();
@@ -120,6 +123,7 @@ export function createRelayServer({
       ws,
       hostId: frame.hostId || `host_${crypto.randomUUID()}`,
       pairingCode,
+      pairingSecretHash: pairingSecret ? hashPairingSecret(pairingSecret) : "",
       meta: frame.meta || {},
       clients,
       paired: Boolean(previous?.paired),
@@ -149,6 +153,10 @@ export function createRelayServer({
     const pairingCode = normalizePairingCode(frame.pairingCode);
     const host = hostsByPairingCode.get(pairingCode);
     if (!host || host.ws.readyState !== host.ws.OPEN || Date.now() > host.expiresAt) {
+      recordJoinFailure(ws);
+      throw new Error("pairing unavailable");
+    }
+    if (host.pairingSecretHash && !isAuthorizedPairingSecret(frame.pairingSecret, host.pairingSecretHash)) {
       recordJoinFailure(ws);
       throw new Error("pairing unavailable");
     }
@@ -348,6 +356,25 @@ function isAuthorizedToken(provided, expected) {
   const providedDigest = crypto.createHash("sha256").update(provided).digest();
   const expectedDigest = crypto.createHash("sha256").update(expected).digest();
   return crypto.timingSafeEqual(providedDigest, expectedDigest);
+}
+
+function normalizeOptionalPairingSecret(value) {
+  if (value === undefined || value === null || value === "") return "";
+  const secret = String(value).trim();
+  if (!/^[a-zA-Z0-9_-]{16,256}$/.test(secret)) {
+    throw new Error("pairingSecret must be 16-256 URL-safe characters");
+  }
+  return secret;
+}
+
+function hashPairingSecret(secret) {
+  return crypto.createHash("sha256").update(secret).digest("base64url");
+}
+
+function isAuthorizedPairingSecret(provided, expectedHash) {
+  const secret = normalizeOptionalPairingSecret(provided);
+  if (!secret) return false;
+  return isAuthorizedToken(hashPairingSecret(secret), expectedHash);
 }
 
 function getPeerKey(ws) {

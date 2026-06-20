@@ -101,29 +101,44 @@ test("relay rejects non CodeBuddyRemote protocol payloads", async () => {
   });
 });
 
-test("relay requires the configured token on host, client, and forwarded frames", async () => {
+test("relay keeps server token on the host channel and uses pairing secret for clients", async () => {
   await withRelay(async ({ relayUrl }) => {
     const host = new WebSocket(relayUrl);
     const phone = new WebSocket(relayUrl);
+    const intruder = new WebSocket(relayUrl);
 
     try {
       await waitForOpen(host);
-      host.send(JSON.stringify({ type: "host.register", pairingCode: "TOKEN1" }));
+      host.send(JSON.stringify({
+        type: "host.register",
+        pairingCode: "TOKEN1",
+        pairingSecret: "pair-secret-12345",
+      }));
       const unauthorized = await readUntil(host, (frame) => frame.type === "error");
       assert.match(unauthorized.error, /unauthorized relay token/);
 
       host.send(JSON.stringify({
         type: "host.register",
         pairingCode: "TOKEN1",
+        pairingSecret: "pair-secret-12345",
         token: "relay-secret",
       }));
       await readUntil(host, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(intruder);
+      intruder.send(JSON.stringify({
+        type: "client.join",
+        pairingCode: "TOKEN1",
+        pairingSecret: "wrong-secret-12345",
+      }));
+      const rejectedJoin = await readUntil(intruder, (frame) => frame.type === "error");
+      assert.match(rejectedJoin.error, /pairing unavailable/);
 
       await waitForOpen(phone);
       phone.send(JSON.stringify({
         type: "client.join",
         pairingCode: "TOKEN1",
-        token: "relay-secret",
+        pairingSecret: "pair-secret-12345",
       }));
       await readUntil(phone, (frame) => frame.type === "client.joined");
 
@@ -133,11 +148,15 @@ test("relay requires the configured token on host, client, and forwarded frames"
         payload: {},
       });
       phone.send(JSON.stringify({ type: "frame", payload: command }));
-      const frameError = await readUntil(phone, (frame) => frame.type === "error");
-      assert.match(frameError.error, /unauthorized relay token/);
+      const forwarded = await readUntil(
+        host,
+        (frame) => frame.type === "frame" && frame.payload?.id === command.id
+      );
+      assert.equal(forwarded.payload.name, "listSessions");
     } finally {
       host.close();
       phone.close();
+      intruder.close();
     }
   }, { token: "relay-secret" });
 });

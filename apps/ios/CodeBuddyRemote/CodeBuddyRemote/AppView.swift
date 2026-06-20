@@ -30,6 +30,7 @@ struct AppView: View {
   @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
+  @AppStorage("remote.relayPairingSecret") private var relayPairingSecret = RelayConfig.defaultValue.pairingSecret
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
   @AppStorage("remote.chatLog.v4") private var persistedChatLog = ""
 
@@ -66,7 +67,7 @@ struct AppView: View {
   }
 
   private var relayConfig: RelayConfig {
-    RelayConfig(relayURL: relayURL, pairingCode: pairingCode, token: relayToken)
+    RelayConfig(relayURL: relayURL, pairingCode: pairingCode, pairingSecret: relayPairingSecret, token: relayToken)
   }
 
   private var client: RemoteClient {
@@ -322,7 +323,7 @@ struct AppView: View {
               .textInputAutocapitalization(.characters)
               .autocorrectionDisabled()
 
-            SecureField("Relay Token，可选", text: $relayToken)
+            SecureField("配对密钥", text: $relayPairingSecret)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled()
           }
@@ -497,6 +498,7 @@ struct AppView: View {
       relayURL = payload.relayURL
       relayToken = payload.relayToken
       pairingCode = payload.pairingCode
+      relayPairingSecret = payload.pairingSecret
     }
   }
 

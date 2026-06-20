@@ -22,11 +22,13 @@ struct RemoteConfig: Equatable {
 struct RelayConfig: Equatable {
   var relayURL: String
   var pairingCode: String
+  var pairingSecret: String
   var token: String
 
   static let defaultValue = RelayConfig(
     relayURL: "ws://127.0.0.1:17330/relay",
     pairingCode: "",
+    pairingSecret: "",
     token: ""
   )
 

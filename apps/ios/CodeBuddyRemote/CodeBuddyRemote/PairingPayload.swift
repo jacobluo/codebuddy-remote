@@ -35,6 +35,7 @@ struct PairingPayload: Equatable {
   let relayURL: String
   let relayToken: String
   let pairingCode: String
+  let pairingSecret: String
   let workspace: String
   let host: String
   let expiresAt: Date
@@ -78,6 +79,7 @@ struct PairingPayload: Equatable {
         relayURL: "",
         relayToken: "",
         pairingCode: "",
+        pairingSecret: "",
         workspace: query["workspace"] ?? "",
         host: query["host"] ?? "",
         expiresAt: expiresAt
@@ -90,6 +92,7 @@ struct PairingPayload: Equatable {
         relayURL: try required("relayURL", in: query),
         relayToken: query["relayToken"] ?? "",
         pairingCode: try required("pairingCode", in: query),
+        pairingSecret: query["pairingSecret"] ?? query["relayToken"] ?? "",
         workspace: query["workspace"] ?? "",
         host: query["host"] ?? "",
         expiresAt: expiresAt

@@ -4,6 +4,7 @@ export function connectRelay({
   relayUrl,
   host,
   pairingCode,
+  pairingSecret = "",
   relayToken = "",
   meta = {},
 }) {
@@ -21,11 +22,12 @@ export function connectRelay({
       send({
         type: "host.register",
         pairingCode,
+        pairingSecret,
         token: relayToken,
         meta,
       });
       unsubscribe = host.subscribe((event) => {
-        send({ type: "frame", payload: event, token: relayToken });
+        send({ type: "frame", payload: event });
       });
     });
 
@@ -73,7 +75,6 @@ export function connectRelay({
       );
       send({
         type: "frame",
-        token: relayToken,
         payload: {
           type: "response",
           requestId: frame.payload.id,
@@ -84,7 +85,6 @@ export function connectRelay({
     } catch (error) {
       send({
         type: "frame",
-        token: relayToken,
         payload: {
           type: "response",
           requestId: frame.payload.id,

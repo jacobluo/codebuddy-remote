@@ -23,6 +23,7 @@ export function createRunConfig({
     token: env.CODEBUDDY_REMOTE_TOKEN || createToken(),
     relayUrl: env.CODEBUDDY_REMOTE_RELAY_URL || "",
     relayToken: env.CODEBUDDY_REMOTE_RELAY_TOKEN || "",
+    relayPairingSecret: env.CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET || createToken(),
     pairingCode: env.CODEBUDDY_REMOTE_PAIRING_CODE || createPairingCode(),
     historyFile: env.CODEBUDDY_REMOTE_HISTORY_FILE || defaultHistoryFile(cwd, homeDir),
     deviceStoreFile: env.CODEBUDDY_REMOTE_DEVICE_STORE_FILE || defaultDeviceStoreFile(homeDir),
@@ -66,8 +67,8 @@ export function buildPairingPayload({
       ...common,
       mode: "relay",
       relayURL: config.relayUrl,
-      relayToken: config.relayToken,
       pairingCode: config.pairingCode,
+      pairingSecret: config.relayPairingSecret,
     };
   }
 
@@ -109,6 +110,7 @@ Environment:
   CODEBUDDY_REMOTE_TOKEN          Local HTTP token, generated when omitted
   CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, optional
   CODEBUDDY_REMOTE_RELAY_TOKEN    Relay auth token, optional
+  CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET Relay client pairing secret, generated when omitted
   CODEBUDDY_REMOTE_PAIRING_CODE   Relay pairing code, generated when omitted
   CODEBUDDY_REMOTE_HISTORY_FILE   Event history JSONL file, default: ~/.codebuddy-remote/history/<workspace>.jsonl
   CODEBUDDY_REMOTE_DEVICE_STORE_FILE Bound device list, default: ~/.codebuddy-remote/devices.json
@@ -144,6 +146,7 @@ export async function main() {
   const relay = connectRelay({
     relayUrl: config.relayUrl,
     relayToken: config.relayToken,
+    pairingSecret: config.relayPairingSecret,
     pairingCode: config.pairingCode,
     host,
     meta: {

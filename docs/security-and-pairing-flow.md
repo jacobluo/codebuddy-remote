@@ -27,7 +27,7 @@ CodeBuddy Remote 的安全目标是让手机可以控制本地 CodeBuddy session
 ```text
 iOS App
   | Local: HTTP/SSE + HMAC device signature
-  | Relay: WebSocket + relay token + pairing code
+  | Relay: WebSocket + host relay token + client pairing code/secret
   v
 Local Host / Relay
   v
@@ -39,7 +39,7 @@ TerminalCliAdapter
 边界说明：
 
 - iOS App 到 Local Host 是不可信网络边界。即便是局域网，也不能默认信任同网设备。
-- iOS App 到 Relay 是公网边界。Relay token 和 pairing code 只证明可以加入转发会话，不代表可以直接访问本地 HTTP API。
+- iOS App 到 Relay 是公网边界。短期 pairing code 和 pairing secret 只证明可以加入转发会话，不代表可以直接访问本地 HTTP API。
 - Local Host 到 CodeBuddy CLI 是本机进程边界。手机输入只能被归一化成白名单 command，再由 adapter 写入已有 CLI session。
 
 ## Local 模式登录和绑定流程
@@ -188,11 +188,13 @@ Pairing URL 包含：
 
 - `mode=relay`
 - `relayURL`
-- `relayToken`
 - `pairingCode`
+- `pairingSecret`
 - `workspace`
 - `host`
 - `expiresAt`
+
+`CODEBUDDY_REMOTE_RELAY_TOKEN` 只在 Mac host 注册 Relay 时发送，不进入 Pairing URL，也不由 iOS 保存。Mac host 注册时还会把 `pairingSecret` 发给 Relay，Relay 只保存其哈希用于后续 client join 校验。`pairingSecret` 默认随机生成，需要固定时可设置 `CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET`。
 
 ### 3. iOS 加入 Relay
 
@@ -200,10 +202,10 @@ iOS App 扫码后：
 
 - 校验 `expiresAt`。
 - 切换到 Relay 模式。
-- 使用 `relayURL + relayToken + pairingCode` 加入对应 host。
+- 使用 `relayURL + pairingCode + pairingSecret` 加入对应 host。
 - Relay 配对码默认短期有效，已加入后不能被第二个 client 复用。
 
-当前 Relay 模式主要依赖 relay token 和短期 pairing code。设备级 HMAC 绑定已经在 Local 模式落地，Relay 侧的设备级认证可以作为下一阶段补齐。
+当前 Relay 模式把 server token 限定在 Mac host 通道；iOS client 使用短期 pairing secret 加入会话，业务 `frame` 不再携带 relay token。设备级 HMAC 绑定已经在 Local 模式落地，Relay 侧的长期设备级认证可以作为下一阶段补齐。
 
 ## API 权限边界
 
@@ -256,8 +258,9 @@ iOS App 扫码后：
 ## 当前已有控制
 
 - Pairing URL 带过期时间。
-- Relay pairing code 短期有效，且不能被多个 client 复用。
+- Relay pairing code / pairing secret 短期有效，且不能被多个 client 复用。
 - 公网 Relay 要求 token，除非显式设置本机调试开关。
+- Relay token 只用于 Mac host 注册，不进入 iOS 二维码和业务 frame。
 - Relay payload 做类型白名单校验。
 - Local 绑定后支持设备级 HMAC 请求签名。
 - 设备密钥保存在 iOS Keychain。
@@ -268,17 +271,17 @@ iOS App 扫码后：
 ## 已知缺口
 
 - Mac 端还没有设备管理 UI，撤销设备需要后续补齐。
-- Relay 模式还没有使用设备级 HMAC 或端到端加密。
+- Relay 模式还没有使用长期设备级 HMAC 或端到端加密。
 - Local Host 当前是 HTTP，局域网内依赖 HMAC 请求签名保护认证完整性，未提供传输层加密。
 - 审计日志还未形成独立文件和查看入口。
-- Pairing URL 中仍携带 bootstrap token，二维码需要被视为短期敏感凭证。
+- Local Pairing URL 中仍携带 bootstrap token；Relay Pairing URL 中携带短期 pairing secret。二维码需要被视为短期敏感凭证。
 - 还未实现 nonce replay cache，同一 5 分钟窗口内的重复签名请求理论上可被重放。
 
 ## 下一步安全任务
 
 1. 增加设备管理能力：列出设备、重命名设备、撤销设备。
 2. 增加 nonce replay cache，拒绝同一设备在时间窗口内重复使用的 nonce。
-3. 为 Relay 模式补设备级认证，避免长期只依赖 relay token。
+3. 为 Relay 模式补长期设备级认证，避免只依赖短期 pairing secret。
 4. 增加本地审计日志，记录设备绑定、连接、prompt 摘要、审批选择和中断恢复。
 5. 评估 Local 模式 mTLS、Noise、WebSocket over TLS 或局域网 HTTPS 的成本。
 6. 把 pairing token 缩短为一次性 bind token，绑定后立即失效。

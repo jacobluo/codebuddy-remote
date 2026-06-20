@@ -64,7 +64,7 @@ final class RelayRemoteClient {
           try await send([
             "type": "client.join",
             "pairingCode": pairingCode,
-            "token": config.token,
+            "pairingSecret": config.pairingSecret,
           ])
         } catch {
           resumeJoin(throwing: error)
@@ -193,7 +193,6 @@ final class RelayRemoteClient {
           try await send([
             "type": "frame",
             "payload": command,
-            "token": config.token,
           ])
         } catch {
           let respond = pendingResponses.removeValue(forKey: commandId)
