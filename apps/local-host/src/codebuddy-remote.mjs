@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import qrcode from "qrcode-terminal";
 
 import { createLocalHost } from "./local-host.mjs";
 import { connectRelay } from "./relay-client.mjs";
@@ -42,6 +43,49 @@ export function buildStartupUrls({
     }
   }
   return [...new Set(urls)];
+}
+
+export function buildPairingPayload({
+  config,
+  urls,
+  hostName = os.hostname(),
+  now = Date.now(),
+  ttlMs = 120000,
+}) {
+  const workspace = path.basename(config.cwd) || config.cwd;
+  const common = {
+    v: "1",
+    expiresAt: String(now + ttlMs),
+    workspace,
+    host: hostName,
+  };
+
+  if (config.relayUrl) {
+    return {
+      ...common,
+      mode: "relay",
+      relayURL: config.relayUrl,
+      relayToken: config.relayToken,
+      pairingCode: config.pairingCode,
+    };
+  }
+
+  return {
+    ...common,
+    mode: "local",
+    baseURL: selectPairingBaseUrl(urls),
+    token: config.token,
+  };
+}
+
+export function createPairingUrl(payload) {
+  const url = new URL("cbr://pair");
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
 }
 
 export function createAdapterOptions(config) {
@@ -112,6 +156,7 @@ export async function main() {
     port: actualPort,
     host: config.host,
   });
+  const pairingUrl = createPairingUrl(buildPairingPayload({ config, urls }));
 
   console.log("");
   console.log("  CodeBuddy Remote");
@@ -128,6 +173,11 @@ export async function main() {
   console.log("");
   console.log("  iOS app Local API candidates:");
   for (const url of urls) console.log(`  ${url}`);
+  console.log("");
+  console.log("  Scan with CodeBuddyRemote iOS app:");
+  qrcode.generate(pairingUrl, { small: true });
+  console.log("");
+  console.log(`  Pairing URL ${pairingUrl}`);
   console.log("");
   console.log("  Press Ctrl+C to stop");
   console.log("");
@@ -171,6 +221,10 @@ function defaultHistoryFile(cwd, homeDir) {
   const safeName = workspaceName.replace(/[^a-zA-Z0-9._-]+/g, "-") || "workspace";
   const hash = crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 16);
   return path.join(homeDir, ".codebuddy-remote", "history", `${safeName}-${hash}.jsonl`);
+}
+
+function selectPairingBaseUrl(urls) {
+  return urls.find((url) => !url.includes("127.0.0.1") && !url.includes("localhost")) || urls[0] || "";
 }
 
 function safeRealpath(candidate, resolveRealpath) {

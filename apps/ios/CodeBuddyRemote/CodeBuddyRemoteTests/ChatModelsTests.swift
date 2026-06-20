@@ -2,6 +2,42 @@ import XCTest
 @testable import CodeBuddyRemote
 
 final class ChatModelsTests: XCTestCase {
+  func testPairingPayloadParsesLocalURL() throws {
+    let payload = try PairingPayload.parse(
+      "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&token=local-token&workspace=drink&host=MacBook&expiresAt=2000",
+      now: Date(timeIntervalSince1970: 1)
+    )
+
+    XCTAssertEqual(payload.mode, .local)
+    XCTAssertEqual(payload.baseURL, "http://192.168.1.23:17320")
+    XCTAssertEqual(payload.token, "local-token")
+    XCTAssertEqual(payload.workspace, "drink")
+    XCTAssertEqual(payload.host, "MacBook")
+  }
+
+  func testPairingPayloadParsesRelayURL() throws {
+    let payload = try PairingPayload.parse(
+      "cbr://pair?v=1&mode=relay&relayURL=wss%3A%2F%2Frelay.example.com%2Frelay&relayToken=relay-token&pairingCode=PAIR123&workspace=drink&host=MacBook&expiresAt=2000",
+      now: Date(timeIntervalSince1970: 1)
+    )
+
+    XCTAssertEqual(payload.mode, .relay)
+    XCTAssertEqual(payload.relayURL, "wss://relay.example.com/relay")
+    XCTAssertEqual(payload.relayToken, "relay-token")
+    XCTAssertEqual(payload.pairingCode, "PAIR123")
+    XCTAssertEqual(payload.workspace, "drink")
+    XCTAssertEqual(payload.host, "MacBook")
+  }
+
+  func testPairingPayloadRejectsExpiredURL() {
+    XCTAssertThrowsError(
+      try PairingPayload.parse(
+        "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&token=local-token&expiresAt=1000",
+        now: Date(timeIntervalSince1970: 2)
+      )
+    )
+  }
+
   func testConversationItemsGroupCompletedActivityUntilFinalAssistantMessage() {
     let user = ChatEntry(id: UUID(), role: .user, text: "扫描代码")
     let thinking = ChatEntry(id: UUID(), role: .assistant, text: "我先读取项目结构。")

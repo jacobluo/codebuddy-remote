@@ -3,6 +3,8 @@ import fs from "node:fs";
 import test from "node:test";
 
 import {
+  buildPairingPayload,
+  createPairingUrl,
   buildStartupUrls,
   createAdapterOptions,
   createRunConfig,
@@ -100,6 +102,61 @@ test("startup URLs include local API candidates", () => {
     "http://127.0.0.1:17320",
     "http://192.168.1.23:17320",
   ]);
+});
+
+test("pairing URL encodes local connection details", () => {
+  const payload = buildPairingPayload({
+    config: {
+      cwd: "/Users/robiluo/aicoding/drink",
+      token: "local-token",
+      relayUrl: "",
+      relayToken: "",
+      pairingCode: "PAIR123",
+    },
+    urls: [
+      "http://127.0.0.1:17320",
+      "http://192.168.1.23:17320",
+    ],
+    hostName: "DONGSHUILUO-MB5",
+    now: 1000,
+    ttlMs: 120000,
+  });
+  const url = new URL(createPairingUrl(payload));
+
+  assert.equal(url.protocol, "cbr:");
+  assert.equal(url.hostname, "pair");
+  assert.equal(url.searchParams.get("v"), "1");
+  assert.equal(url.searchParams.get("mode"), "local");
+  assert.equal(url.searchParams.get("baseURL"), "http://192.168.1.23:17320");
+  assert.equal(url.searchParams.get("token"), "local-token");
+  assert.equal(url.searchParams.get("workspace"), "drink");
+  assert.equal(url.searchParams.get("host"), "DONGSHUILUO-MB5");
+  assert.equal(url.searchParams.get("expiresAt"), "121000");
+});
+
+test("pairing URL encodes relay connection details", () => {
+  const payload = buildPairingPayload({
+    config: {
+      cwd: "/Users/robiluo/aicoding/drink",
+      token: "local-token",
+      relayUrl: "wss://relay.example.com/relay",
+      relayToken: "relay-token",
+      pairingCode: "PAIR123",
+    },
+    urls: ["http://192.168.1.23:17320"],
+    hostName: "DONGSHUILUO-MB5",
+    now: 1000,
+    ttlMs: 120000,
+  });
+  const url = new URL(createPairingUrl(payload));
+
+  assert.equal(url.searchParams.get("mode"), "relay");
+  assert.equal(url.searchParams.get("relayURL"), "wss://relay.example.com/relay");
+  assert.equal(url.searchParams.get("relayToken"), "relay-token");
+  assert.equal(url.searchParams.get("pairingCode"), "PAIR123");
+  assert.equal(url.searchParams.get("workspace"), "drink");
+  assert.equal(url.searchParams.get("host"), "DONGSHUILUO-MB5");
+  assert.equal(url.searchParams.get("expiresAt"), "121000");
 });
 
 test("codebuddy-remote treats a symlinked bin path as the CLI entry", () => {

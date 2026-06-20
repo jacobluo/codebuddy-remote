@@ -44,6 +44,7 @@ struct AppView: View {
   @State private var prompt = ""
   @State private var isStreaming = false
   @State private var isSettingsPresented = false
+  @State private var isPairingScannerPresented = false
   @State private var isAttachmentMenuPresented = false
   @State private var hasLoadedPersistedChat = false
   @State private var errorMessage: String?
@@ -136,6 +137,9 @@ struct AppView: View {
     .sheet(isPresented: $isSettingsPresented) {
       settingsSheet
     }
+    .sheet(isPresented: $isPairingScannerPresented) {
+      pairingScannerSheet
+    }
   }
 
   private var topBar: some View {
@@ -180,6 +184,10 @@ struct AppView: View {
         .buttonStyle(.plain)
 
         Menu {
+          Button("扫码绑定") {
+            isPairingScannerPresented = true
+          }
+
           Button("连接") {
             connect()
           }
@@ -310,6 +318,14 @@ struct AppView: View {
           }
         }
 
+        Section("配对") {
+          Button {
+            isPairingScannerPresented = true
+          } label: {
+            Label("扫码绑定", systemImage: "qrcode.viewfinder")
+          }
+        }
+
         Section("Session") {
           LabeledContent("状态", value: statusText)
           LabeledContent("Workspace", value: workspaceText)
@@ -330,6 +346,28 @@ struct AppView: View {
               connect()
             }
             isSettingsPresented = false
+          }
+        }
+      }
+    }
+  }
+
+  private var pairingScannerSheet: some View {
+    NavigationStack {
+      QRCodeScannerView(
+        onScan: handleScannedPairingCode,
+        onError: { message in
+          errorMessage = message
+          isPairingScannerPresented = false
+        }
+      )
+      .ignoresSafeArea(edges: .bottom)
+      .navigationTitle("扫码绑定")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("关闭") {
+            isPairingScannerPresented = false
           }
         }
       }
@@ -403,6 +441,33 @@ struct AppView: View {
     isStreaming = false
     if statusText != "正在连接" {
       statusText = "未连接"
+    }
+  }
+
+  private func handleScannedPairingCode(_ code: String) {
+    do {
+      let payload = try PairingPayload.parse(code)
+      applyPairingPayload(payload)
+      isPairingScannerPresented = false
+      isSettingsPresented = false
+      connect()
+    } catch {
+      errorMessage = error.localizedDescription
+      isPairingScannerPresented = false
+    }
+  }
+
+  private func applyPairingPayload(_ payload: PairingPayload) {
+    switch payload.mode {
+    case .local:
+      modeRaw = ConnectionMode.local.rawValue
+      baseURL = payload.baseURL
+      token = payload.token
+    case .relay:
+      modeRaw = ConnectionMode.relay.rawValue
+      relayURL = payload.relayURL
+      relayToken = payload.relayToken
+      pairingCode = payload.pairingCode
     }
   }
 
