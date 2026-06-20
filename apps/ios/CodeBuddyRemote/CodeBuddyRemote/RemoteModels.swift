@@ -60,6 +60,11 @@ struct SessionListResponse: Codable {
   let sessions: [RemoteSession]
 }
 
+struct EventListResponse: Codable {
+  let events: [RemoteEvent]
+  let latestSeq: Int
+}
+
 struct RemoteEvent: Codable, Identifiable, Equatable {
   let id: String
   let sessionId: String

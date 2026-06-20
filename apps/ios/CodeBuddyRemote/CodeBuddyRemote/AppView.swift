@@ -23,15 +23,22 @@ struct AppView: View {
     case resume
   }
 
-  private struct ChatEntry: Identifiable, Equatable {
-    enum Role {
+  private struct ChatEntry: Identifiable, Codable, Equatable {
+    enum Role: String, Codable {
       case user
+      case assistant
       case system
     }
 
-    let id = UUID()
+    let id: UUID
     let role: Role
-    let text: String
+    var text: String
+
+    init(id: UUID = UUID(), role: Role, text: String) {
+      self.id = id
+      self.role = role
+      self.text = text
+    }
   }
 
   @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
@@ -40,15 +47,20 @@ struct AppView: View {
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
+  @AppStorage("remote.chatLog.v1") private var persistedChatLog = ""
 
   @State private var sessions: [RemoteSession] = []
   @State private var selectedSessionId = "terminal-cli"
   @State private var terminal = TerminalScreen()
+  @State private var terminalAssistantMessages: [String] = []
+  @State private var terminalAssistantEntryIds: [UUID] = []
   @State private var chatEntries: [ChatEntry] = []
+  @State private var latestHandledSeq = 0
   @State private var statusText = "未连接"
   @State private var prompt = ""
   @State private var isStreaming = false
   @State private var isSettingsPresented = false
+  @State private var hasLoadedPersistedChat = false
   @State private var errorMessage: String?
   @State private var streamTask: Task<Void, Never>?
   @State private var relayClient: RelayRemoteClient?
@@ -73,10 +85,6 @@ struct AppView: View {
     sessions.first?.workspace ?? "codebuddy-remote"
   }
 
-  private var terminalText: String {
-    terminal.text
-  }
-
   var body: some View {
     ZStack {
       Color(.systemBackground)
@@ -91,30 +99,23 @@ struct AppView: View {
               messageRow(entry)
             }
 
-            if !terminalText.isEmpty {
-              assistantTranscript
-                .id("terminal-bottom")
-            } else {
-              emptyConversation
-                .id("terminal-bottom")
-            }
+            emptyConversation
+              .id("conversation-bottom")
 
             Spacer(minLength: 116)
           }
           .padding(.horizontal, 20)
         }
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: terminalText) {
-          withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo("terminal-bottom", anchor: .bottom)
-          }
-        }
         .onChange(of: chatEntries.count) {
           withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo("terminal-bottom", anchor: .bottom)
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
           }
         }
       }
+    }
+    .onAppear {
+      loadPersistedChatIfNeeded()
     }
     .safeAreaInset(edge: .top, spacing: 0) {
       topBar
@@ -305,7 +306,7 @@ struct AppView: View {
 
   @ViewBuilder
   private var emptyConversation: some View {
-    if isStreaming {
+    if isStreaming || !chatEntries.isEmpty {
       Color.clear
         .frame(maxWidth: .infinity, minHeight: 1)
         .padding(.top, 48)
@@ -326,26 +327,6 @@ struct AppView: View {
     }
   }
 
-  private var assistantTranscript: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack(spacing: 8) {
-        Image(systemName: "square.stack.3d.up")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
-        Text("CodeBuddy session")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
-      }
-
-      Text(terminalText)
-        .font(.system(.body, design: .monospaced))
-        .foregroundStyle(.primary)
-        .textSelection(.enabled)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
   @ViewBuilder
   private func messageRow(_ entry: ChatEntry) -> some View {
     switch entry.role {
@@ -360,6 +341,13 @@ struct AppView: View {
           .background(Color(.secondarySystemFill))
           .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       }
+    case .assistant:
+      Text(entry.text)
+        .font(.body)
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     case .system:
       Text(entry.text)
         .font(.body)
@@ -435,7 +423,10 @@ struct AppView: View {
     disconnect()
     errorMessage = nil
     terminal = TerminalScreen()
+    terminalAssistantMessages.removeAll()
+    terminalAssistantEntryIds.removeAll()
     chatEntries.removeAll()
+    latestHandledSeq = 0
     statusText = "正在连接"
 
     streamTask = Task {
@@ -456,6 +447,10 @@ struct AppView: View {
           try await relay.connect()
           sessions = try await relay.listSessions()
           selectedSessionId = sessions.first?.id ?? "terminal-cli"
+          let replay = try await relay.listEvents(after: 0)
+          for event in replay.events {
+            handle(event)
+          }
           statusText = selectedSessionId.isEmpty ? "没有可用 session" : "Relay 已连接 \(selectedSessionId)"
           isStreaming = true
 
@@ -531,14 +526,24 @@ struct AppView: View {
   }
 
   private func handle(_ event: RemoteEvent) {
+    if event.seq <= latestHandledSeq {
+      return
+    }
+    latestHandledSeq = event.seq
+
     switch event.name {
     case "user.message":
       if let text = event.payload.text {
         appendUserMessage(text)
       }
+    case "assistant.delta", "assistant.completed":
+      if let text = event.payload.text, !text.isEmpty {
+        appendAssistantMessage(text)
+      }
     case "terminal.output":
       if let text = event.payload.text {
         terminal.write(text)
+        syncAssistantMessagesFromTerminal()
       }
     case "session.state":
       if let status = event.payload.status {
@@ -558,6 +563,62 @@ struct AppView: View {
       return
     }
     chatEntries.append(ChatEntry(role: .user, text: text))
+    persistChatEntries()
+  }
+
+  private func appendAssistantMessage(_ text: String) {
+    if chatEntries.last?.role == .assistant, chatEntries.last?.text == text {
+      return
+    }
+    chatEntries.append(ChatEntry(role: .assistant, text: text))
+    persistChatEntries()
+  }
+
+  private func syncAssistantMessagesFromTerminal() {
+    let messages = terminal.assistantMessages
+    guard messages != terminalAssistantMessages else { return }
+
+    for index in messages.indices {
+      if index < terminalAssistantEntryIds.count {
+        let entryId = terminalAssistantEntryIds[index]
+        if let entryIndex = chatEntries.firstIndex(where: { $0.id == entryId }) {
+          chatEntries[entryIndex].text = messages[index]
+        }
+      } else {
+        let entry = ChatEntry(role: .assistant, text: messages[index])
+        terminalAssistantEntryIds.append(entry.id)
+        chatEntries.append(entry)
+      }
+    }
+
+    if messages.count < terminalAssistantEntryIds.count {
+      let staleIds = Set(terminalAssistantEntryIds.dropFirst(messages.count))
+      chatEntries.removeAll { staleIds.contains($0.id) }
+      terminalAssistantEntryIds = Array(terminalAssistantEntryIds.prefix(messages.count))
+    }
+
+    terminalAssistantMessages = messages
+    persistChatEntries()
+  }
+
+  private func loadPersistedChatIfNeeded() {
+    guard !hasLoadedPersistedChat else { return }
+    hasLoadedPersistedChat = true
+    guard let data = persistedChatLog.data(using: .utf8), !data.isEmpty else {
+      return
+    }
+    if let decoded = try? JSONDecoder().decode([ChatEntry].self, from: data) {
+      chatEntries = decoded
+    }
+  }
+
+  private func persistChatEntries() {
+    guard let data = try? JSONEncoder().encode(chatEntries),
+          let text = String(data: data, encoding: .utf8)
+    else {
+      return
+    }
+    persistedChatLog = text
   }
 }
 

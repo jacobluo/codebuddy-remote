@@ -147,6 +147,14 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
       return { sessions: adapter.listSessions() };
     }
 
+    if (command.name === "listEvents") {
+      const after = Number(command.payload.after || 0);
+      return {
+        events: events.filter((event) => event.seq > after),
+        latestSeq: seq,
+      };
+    }
+
     if (command.name === "getState") {
       return { state: adapter.getState(command.sessionId) };
     }

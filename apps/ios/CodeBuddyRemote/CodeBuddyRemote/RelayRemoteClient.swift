@@ -98,6 +98,14 @@ final class RelayRemoteClient {
     return response.sessions
   }
 
+  func listEvents(after: Int = 0) async throws -> EventListResponse {
+    try await request(
+      name: "listEvents",
+      sessionId: "local-host",
+      payload: ["after": String(after)]
+    )
+  }
+
   func sendPrompt(sessionId: String, text: String) async throws {
     let _: CommandEnvelope = try await request(
       name: "sendPrompt",

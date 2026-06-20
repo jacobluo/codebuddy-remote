@@ -1,5 +1,6 @@
 export const COMMAND_NAMES = new Set([
   "listSessions",
+  "listEvents",
   "selectSession",
   "sendPrompt",
   "approveTool",

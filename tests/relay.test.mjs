@@ -155,6 +155,52 @@ test("relay keeps joined clients attached when a host reconnects", async () => {
   });
 });
 
+test("relay client can backfill host events after joining", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    await withLocalHost(async ({ host }) => {
+      const relayClient = connectRelay({
+        relayUrl,
+        host,
+        pairingCode: "BACKFILL1",
+        meta: { workspace: "mock-workspace" },
+      });
+      const phone = new WebSocket(relayUrl);
+
+      try {
+        host.pushEvent({
+          sessionId: "mock-session",
+          conversationId: "mock-session",
+          name: "terminal.output",
+          payload: { text: "already rendered" },
+        });
+
+        await sleep(50);
+        await waitForOpen(phone);
+        phone.send(JSON.stringify({ type: "client.join", pairingCode: "BACKFILL1" }));
+        await readUntil(phone, (frame) => frame.type === "client.joined");
+
+        const command = createCommand({
+          sessionId: "local-host",
+          name: "listEvents",
+          payload: { after: 0 },
+        });
+        phone.send(JSON.stringify({ type: "frame", payload: command }));
+
+        const response = await readUntil(
+          phone,
+          (frame) => frame.type === "frame" && frame.payload?.requestId === command.id
+        );
+        assert.equal(response.payload.ok, true);
+        assert.equal(response.payload.body.latestSeq, 1);
+        assert.equal(response.payload.body.events[0].payload.text, "already rendered");
+      } finally {
+        phone.close();
+        relayClient.close();
+      }
+    });
+  });
+});
+
 function waitForOpen(ws) {
   if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {

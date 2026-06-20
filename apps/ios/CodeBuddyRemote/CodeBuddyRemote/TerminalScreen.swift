@@ -58,6 +58,44 @@ struct TerminalScreen {
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
+  var assistantMessages: [String] {
+    var messages: [String] = []
+    var current: [String] = []
+
+    func flush() {
+      let text = current
+        .joined(separator: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !text.isEmpty {
+        messages.append(text)
+      }
+      current.removeAll()
+    }
+
+    for rawLine in text.components(separatedBy: .newlines) {
+      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      if line.hasPrefix("● ") {
+        flush()
+        let firstLine = String(line.dropFirst(2))
+          .trimmingCharacters(in: .whitespaces)
+        if shouldKeepAssistantLine(firstLine) {
+          current.append(firstLine)
+        }
+        continue
+      }
+
+      guard !current.isEmpty else { continue }
+      if shouldKeepAssistantLine(line) {
+        current.append(line)
+      } else if isTerminalBoundary(line) {
+        flush()
+      }
+    }
+
+    flush()
+    return messages
+  }
+
   private mutating func put(_ character: String) {
     ensureLine()
     let line = lines[row]
@@ -139,5 +177,28 @@ struct TerminalScreen {
       .replacingOccurrences(of: #"\[[?0-9;]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
       .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespaces)
+  }
+
+  private func shouldKeepAssistantLine(_ line: String) -> Bool {
+    if line.isEmpty { return false }
+    if isTerminalBoundary(line) { return false }
+    if line.hasPrefix("Bash(") || line.hasPrefix("Read(") || line.hasPrefix("Search(") {
+      return false
+    }
+    if line.hasPrefix("⎿ ") { return false }
+    if line.contains("Waking…") { return false }
+    if line.contains("esc to interrupt") { return false }
+    return true
+  }
+
+  private func isTerminalBoundary(_ line: String) -> Bool {
+    if line.isEmpty { return true }
+    if line.hasPrefix(">") { return true }
+    if line == "? for shortcuts" { return true }
+    if line.allSatisfy({ $0 == "─" || $0 == "━" || $0 == " " }) { return true }
+    if line.hasPrefix("╭") || line.hasPrefix("╰") || line.hasPrefix("│") {
+      return true
+    }
+    return false
   }
 }
