@@ -95,15 +95,22 @@ private struct UserMessageBubble: View {
 private struct AssistantMarkdownView: View {
   let text: String
 
-  private var displayText: String {
-    let limit = 12_000
-    guard text.count > limit else { return text }
-    return "内容较长，已显示最新部分：\n\n" + text.suffix(limit)
+  @State private var isExpanded = false
+
+  private var isLongText: Bool {
+    text.count > previewCharacterLimit
+  }
+
+  private var previewCharacterLimit: Int { 4_000 }
+
+  private var renderText: String {
+    guard isLongText, !isExpanded else { return text }
+    return String(text.prefix(previewCharacterLimit))
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      ForEach(Array(AssistantMarkdownParser.blocks(from: displayText).prefix(120).enumerated()), id: \.offset) { _, block in
+      ForEach(Array(AssistantMarkdownParser.blocks(from: renderText).enumerated()), id: \.offset) { _, block in
         switch block.kind {
         case .heading:
           Text(block.text)
@@ -141,6 +148,22 @@ private struct AssistantMarkdownView: View {
         case .codeBlock(let language):
           CodeBlockCard(language: language, text: block.text)
         }
+      }
+
+      if isLongText {
+        Button {
+          isExpanded.toggle()
+        } label: {
+          HStack(spacing: 6) {
+            Text(isExpanded ? "收起" : "展开完整内容")
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+              .font(.caption.weight(.semibold))
+          }
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
       }
     }
     .lineSpacing(3)

@@ -68,7 +68,6 @@ struct AppView: View {
     RemoteClient(config: config)
   }
 
-  private var maxChatEntries: Int { 120 }
   private var maxRenderedChatEntries: Int { 80 }
   private var initialReplayEventLimit: Int { 120 }
 
@@ -714,18 +713,8 @@ struct AppView: View {
   }
 
   private func persistChatEntriesAndNotify() {
-    trimChatEntriesIfNeeded()
     scheduleChatUpdate()
     schedulePersistChatEntries()
-  }
-
-  private func trimChatEntriesIfNeeded() {
-    guard chatEntries.count > maxChatEntries else { return }
-    let removeCount = chatEntries.count - maxChatEntries
-    let removedIds = Set(chatEntries.prefix(removeCount).map(\.id))
-    chatEntries.removeFirst(removeCount)
-    expandedActivityEntryIds.subtract(removedIds)
-    expandedActivityGroupIds.subtract(removedIds)
   }
 
   private func schedulePersistChatEntries() {
