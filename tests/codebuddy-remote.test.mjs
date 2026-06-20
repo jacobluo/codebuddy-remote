@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import test from "node:test";
+
+import {
+  buildStartupUrls,
+  createAdapterOptions,
+  createRunConfig,
+  isCliEntry,
+} from "../apps/local-host/src/codebuddy-remote.mjs";
+
+test("codebuddy-remote exposes the expected package bin", () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+  assert.equal(pkg.bin["codebuddy-remote"], "./apps/local-host/src/codebuddy-remote.mjs");
+});
+
+test("codebuddy-remote creates a run config from the current workspace", () => {
+  const config = createRunConfig({
+    cwd: "/Users/robiluo/aicoding/drink",
+    env: {
+      CODEBUDDY_REMOTE_HOST: "127.0.0.1",
+      CODEBUDDY_REMOTE_PORT: "18080",
+      CODEBUDDY_CLI_PATH: "custom-codebuddy",
+      CODEBUDDY_REMOTE_TOKEN: "fixed-token",
+    },
+  });
+
+  assert.equal(config.cwd, "/Users/robiluo/aicoding/drink");
+  assert.equal(config.host, "127.0.0.1");
+  assert.equal(config.port, 18080);
+  assert.equal(config.cliPath, "custom-codebuddy");
+  assert.equal(config.token, "fixed-token");
+});
+
+test("codebuddy-remote configures plain CodeBuddy CLI as an interactive terminal process", () => {
+  const options = createAdapterOptions({
+    cwd: "/Users/robiluo/aicoding/drink",
+    cliPath: "codebuddy",
+  });
+
+  assert.deepEqual(options, {
+    cwd: "/Users/robiluo/aicoding/drink",
+    cliPath: "codebuddy",
+    args: [],
+  });
+});
+
+test("codebuddy-remote generates a token when one is not provided", () => {
+  const config = createRunConfig({
+    cwd: "/tmp/project",
+    env: {},
+  });
+
+  assert.match(config.token, /^[a-zA-Z0-9_-]{32,}$/);
+});
+
+test("startup URLs include localhost and LAN candidates", () => {
+  const urls = buildStartupUrls({
+    port: 17320,
+    token: "token_123",
+    host: "0.0.0.0",
+    interfaces: {
+      lo0: [{ family: "IPv4", address: "127.0.0.1", internal: true }],
+      en0: [{ family: "IPv4", address: "192.168.1.23", internal: false }],
+    },
+  });
+
+  assert.deepEqual(urls, [
+    "http://127.0.0.1:17320/?token=token_123",
+    "http://192.168.1.23:17320/?token=token_123",
+  ]);
+});
+
+test("codebuddy-remote treats a symlinked bin path as the CLI entry", () => {
+  const realScript = "/repo/apps/local-host/src/codebuddy-remote.mjs";
+  const linkedBin = "/opt/homebrew/bin/codebuddy-remote";
+
+  assert.equal(
+    isCliEntry({
+      metaUrl: `file://${realScript}`,
+      argv1: linkedBin,
+      realpathSync: (candidate) => {
+        if (candidate === linkedBin) return realScript;
+        return candidate;
+      },
+    }),
+    true,
+  );
+});

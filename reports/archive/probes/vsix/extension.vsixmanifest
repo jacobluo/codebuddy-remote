@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="codebuddy-mobile-bridge-probe" Version="0.0.2" Publisher="local-probe"/>
+    <DisplayName>CodeBuddy Mobile Bridge Probe</DisplayName>
+    <Description xml:space="preserve">Runtime probe for CodeBuddy IDE extension loading and Genie command accessibility.</Description>
+    <Tags>codebuddy,probe</Tags>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
+  </Installation>
+  <Dependencies/>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json"/>
+    <Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md"/>
+  </Assets>
+</PackageManifest>

@@ -1,0 +1,26 @@
+{
+  "name": "codebuddy-mobile-bridge-probe",
+  "displayName": "CodeBuddy Mobile Bridge Probe",
+  "description": "Runtime probe for CodeBuddy IDE extension loading and Genie command accessibility.",
+  "version": "0.0.2",
+  "publisher": "local-probe",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:codebuddyMobileProbe.run"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codebuddyMobileProbe.run",
+        "title": "CodeBuddy Mobile Probe: Run"
+      }
+    ]
+  }
+}

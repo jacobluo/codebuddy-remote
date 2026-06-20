@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CodeBuddy Remote</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>CodeBuddy Remote</h1>
+          <p>控制本地 CodeBuddy CLI session</p>
+        </div>
+        <span id="connectionState" class="status">离线</span>
+      </header>
+
+      <section class="panel session-panel">
+        <div>
+          <span class="label">当前 session</span>
+          <strong id="sessionName">未连接</strong>
+        </div>
+        <div class="session-actions">
+          <button id="refreshButton" type="button">刷新</button>
+          <button id="interruptButton" type="button" class="secondary">中断</button>
+          <button id="resumeButton" type="button" class="secondary">恢复</button>
+        </div>
+      </section>
+
+      <section class="panel transcript-panel">
+        <pre id="terminalOutput" class="terminal-output" aria-live="polite"></pre>
+        <div id="events" class="events" aria-live="polite"></div>
+      </section>
+
+      <form id="promptForm" class="composer">
+        <textarea
+          id="promptInput"
+          name="prompt"
+          rows="3"
+          placeholder="输入 prompt，发送到本地 CodeBuddy session"
+          required
+        ></textarea>
+        <button type="submit">发送</button>
+      </form>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+
+# Logs and local runtime output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+reports/archive/generated/
+
+# Xcode / SwiftPM generated files
+DerivedData/
+.build/
+*.xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
