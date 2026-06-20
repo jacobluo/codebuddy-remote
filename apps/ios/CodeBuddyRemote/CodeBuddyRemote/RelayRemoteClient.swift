@@ -3,6 +3,7 @@ import Foundation
 enum RelayClientError: LocalizedError {
   case invalidRelayURL
   case invalidPairingCode
+  case notConnected
   case malformedFrame
   case relayError(String)
 
@@ -12,6 +13,8 @@ enum RelayClientError: LocalizedError {
       "请输入有效的 Relay 地址"
     case .invalidPairingCode:
       "请输入配对码"
+    case .notConnected:
+      "Relay 尚未连接"
     case .malformedFrame:
       "无法解析 Relay 消息"
     case .relayError(let message):
@@ -27,6 +30,7 @@ final class RelayRemoteClient {
   private var task: URLSessionWebSocketTask?
   private var receiveTask: Task<Void, Never>?
   private var eventContinuation: AsyncThrowingStream<RemoteEvent, Error>.Continuation?
+  private var eventBacklog: [RemoteEvent] = []
   private var joinContinuation: CheckedContinuation<Void, Error>?
   private var pendingResponses: [String: (Result<Data, Error>) -> Void] = [:]
 
@@ -77,6 +81,7 @@ final class RelayRemoteClient {
     task = nil
     eventContinuation?.finish()
     eventContinuation = nil
+    eventBacklog.removeAll()
 
     for respond in pendingResponses.values {
       respond(.failure(CancellationError()))
@@ -120,6 +125,10 @@ final class RelayRemoteClient {
   func streamEvents() -> AsyncThrowingStream<RemoteEvent, Error> {
     AsyncThrowingStream { continuation in
       eventContinuation = continuation
+      for event in eventBacklog {
+        continuation.yield(event)
+      }
+      eventBacklog.removeAll()
       continuation.onTermination = { [weak self] _ in
         Task { @MainActor in
           self?.eventContinuation = nil
@@ -167,6 +176,12 @@ final class RelayRemoteClient {
           let respond = pendingResponses.removeValue(forKey: commandId)
           respond?(.failure(error))
         }
+      }
+
+      Task {
+        try? await Task.sleep(nanoseconds: 10_000_000_000)
+        let respond = pendingResponses.removeValue(forKey: commandId)
+        respond?(.failure(RelayClientError.relayError("Relay 请求超时")))
       }
     }
   }
@@ -224,7 +239,15 @@ final class RelayRemoteClient {
 
     let data = try JSONSerialization.data(withJSONObject: payload)
     if type == "event" {
-      eventContinuation?.yield(try JSONDecoder().decode(RemoteEvent.self, from: data))
+      let event = try JSONDecoder().decode(RemoteEvent.self, from: data)
+      if let eventContinuation {
+        eventContinuation.yield(event)
+      } else {
+        eventBacklog.append(event)
+        if eventBacklog.count > 200 {
+          eventBacklog.removeFirst(eventBacklog.count - 200)
+        }
+      }
       return
     }
 
@@ -244,7 +267,9 @@ final class RelayRemoteClient {
   }
 
   private func send(_ dictionary: [String: Any]) async throws {
-    guard let task else { return }
+    guard let task else {
+      throw RelayClientError.notConnected
+    }
     let data = try JSONSerialization.data(withJSONObject: dictionary)
     guard let text = String(data: data, encoding: .utf8) else {
       throw RelayClientError.malformedFrame

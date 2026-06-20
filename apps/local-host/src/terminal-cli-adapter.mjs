@@ -21,6 +21,7 @@ export class TerminalCliAdapter {
     errorOutput = process.stderr,
     env = process.env,
     submitDelayMs = 50,
+    clearInputSequence = "\x1b\x1b",
   } = {}) {
     this.cliPath = cliPath;
     this.args = args;
@@ -31,6 +32,7 @@ export class TerminalCliAdapter {
     this.errorOutput = errorOutput;
     this.env = env;
     this.submitDelayMs = submitDelayMs;
+    this.clearInputSequence = clearInputSequence;
   }
 
   listSessions() {
@@ -81,6 +83,10 @@ export class TerminalCliAdapter {
   async sendPrompt(sessionId, text) {
     this.#assertSession(sessionId);
     await this.start();
+    if (this.clearInputSequence) {
+      this.#terminal.write(this.clearInputSequence);
+      await delay(this.submitDelayMs);
+    }
     this.#terminal.write(text);
     await delay(this.submitDelayMs);
     this.#terminal.write("\r");

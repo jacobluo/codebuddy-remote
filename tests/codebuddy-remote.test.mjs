@@ -6,6 +6,7 @@ import {
   buildStartupUrls,
   createAdapterOptions,
   createRunConfig,
+  formatHelp,
   isCliEntry,
 } from "../apps/local-host/src/codebuddy-remote.mjs";
 
@@ -50,6 +51,14 @@ test("codebuddy-remote configures plain CodeBuddy CLI as an interactive terminal
     cliPath: "codebuddy",
     args: [],
   });
+});
+
+test("codebuddy-remote help documents relay environment variables", () => {
+  const help = formatHelp();
+
+  assert.match(help, /Usage: codebuddy-remote/);
+  assert.match(help, /CODEBUDDY_REMOTE_RELAY_URL/);
+  assert.match(help, /CODEBUDDY_REMOTE_PAIRING_CODE/);
 });
 
 test("codebuddy-remote generates a token when one is not provided", () => {

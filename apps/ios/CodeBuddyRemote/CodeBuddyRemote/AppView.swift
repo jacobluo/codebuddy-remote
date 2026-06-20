@@ -208,6 +208,7 @@ struct AppView: View {
   private func connect() {
     disconnect()
     errorMessage = nil
+    terminal = TerminalScreen()
     statusText = "正在连接..."
 
     streamTask = Task {
@@ -224,13 +225,14 @@ struct AppView: View {
         } else {
           let relay = RelayRemoteClient(config: relayConfig)
           relayClient = relay
+          let eventStream = relay.streamEvents()
           try await relay.connect()
           sessions = try await relay.listSessions()
           selectedSessionId = sessions.first?.id ?? "terminal-cli"
           statusText = selectedSessionId.isEmpty ? "没有可用 session" : "Relay 已连接 \(selectedSessionId)"
           isStreaming = true
 
-          for try await event in relay.streamEvents() {
+          for try await event in eventStream {
             handle(event)
           }
         }
@@ -259,6 +261,7 @@ struct AppView: View {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
+    errorMessage = nil
 
     Task {
       do {
@@ -267,6 +270,7 @@ struct AppView: View {
         } else {
           try await relayClient?.sendPrompt(sessionId: selectedSessionId, text: text)
         }
+        errorMessage = nil
       } catch {
         errorMessage = error.localizedDescription
       }
@@ -274,6 +278,7 @@ struct AppView: View {
   }
 
   private func runAction(_ action: SessionAction) {
+    errorMessage = nil
     Task {
       do {
         switch action {
@@ -290,6 +295,7 @@ struct AppView: View {
             try await relayClient?.resume(sessionId: selectedSessionId)
           }
         }
+        errorMessage = nil
       } catch {
         errorMessage = error.localizedDescription
       }

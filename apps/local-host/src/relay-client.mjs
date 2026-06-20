@@ -12,6 +12,7 @@ export function connectRelay({
   let ws;
   let unsubscribe;
   let closed = false;
+  let loggedConnected = false;
 
   function connect() {
     ws = new WebSocket(relayUrl);
@@ -47,23 +48,29 @@ export function connectRelay({
     const frame = JSON.parse(Buffer.isBuffer(data) ? data.toString("utf8") : String(data));
 
     if (frame.type === "host.registered") {
-      console.log(`[codebuddy-remote] relay connected: ${relayUrl}`);
-      console.log(`[codebuddy-remote] pairing code: ${frame.pairingCode}`);
+      if (!loggedConnected) {
+        console.log(`[codebuddy-remote] relay connected: ${relayUrl}`);
+        console.log(`[codebuddy-remote] pairing code: ${frame.pairingCode}`);
+        loggedConnected = true;
+      }
       return;
     }
 
     if (frame.type === "client.joined") {
       console.log(`[codebuddy-remote] relay client joined: ${frame.clientId}`);
-      for (const event of host.getEvents({ after: 0 })) {
-        send({ type: "frame", payload: event, token: relayToken });
-      }
       return;
     }
 
     if (frame.type !== "frame" || frame.payload?.type !== "command") return;
 
     try {
+      console.log(
+        `[codebuddy-remote] relay command: ${frame.payload.name} ${frame.payload.id}`
+      );
       const body = await host.handleCommand(frame.payload);
+      console.log(
+        `[codebuddy-remote] relay response: ${frame.payload.name} ${frame.payload.id}`
+      );
       send({
         type: "frame",
         token: relayToken,

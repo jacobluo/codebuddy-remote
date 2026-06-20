@@ -47,6 +47,22 @@ export function createAdapterOptions(config) {
   };
 }
 
+export function formatHelp() {
+  return `Usage: codebuddy-remote [--help]
+
+Starts a local CodeBuddy CLI session and exposes it to CodeBuddy Remote clients.
+
+Environment:
+  CODEBUDDY_CLI_PATH              CodeBuddy executable, default: codebuddy
+  CODEBUDDY_REMOTE_HOST           Local HTTP host, default: 0.0.0.0
+  CODEBUDDY_REMOTE_PORT           Local HTTP port, default: 17320
+  CODEBUDDY_REMOTE_TOKEN          Local HTTP token, generated when omitted
+  CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, optional
+  CODEBUDDY_REMOTE_RELAY_TOKEN    Relay auth token, optional
+  CODEBUDDY_REMOTE_PAIRING_CODE   Relay pairing code, generated when omitted
+`;
+}
+
 export function isCliEntry({
   metaUrl = import.meta.url,
   argv1 = process.argv[1],
@@ -59,6 +75,11 @@ export function isCliEntry({
 }
 
 export async function main() {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log(formatHelp());
+    return;
+  }
+
   const config = createRunConfig();
   const adapter = new TerminalCliAdapter(createAdapterOptions(config));
   const host = createLocalHost({

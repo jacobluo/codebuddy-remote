@@ -51,6 +51,7 @@ test("terminal CLI adapter writes phone prompts into the same terminal session",
   const result = await adapter.sendPrompt("terminal-cli", "只回复 OK");
 
   assert.deepEqual(calls, [
+    ["write", "\x1b\x1b"],
     ["write", "只回复 OK"],
     ["write", "\r"],
   ]);

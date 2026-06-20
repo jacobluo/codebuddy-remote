@@ -15,6 +15,11 @@ const JSON_HEADERS = {
 export function createRelayServer({ token } = {}) {
   const hostsByPairingCode = new Map();
   const clientsBySocket = new Map();
+  const stats = {
+    framesFromHosts: 0,
+    framesFromClients: 0,
+    commandsFromClients: 0,
+  };
   const server = http.createServer(handleHttp);
   const wss = new WebSocketServer({ noServer: true });
 
@@ -52,6 +57,7 @@ export function createRelayServer({ token } = {}) {
         ok: true,
         hosts: hostsByPairingCode.size,
         clients: clientsBySocket.size,
+        stats: { ...stats },
       });
       return;
     }
@@ -91,18 +97,20 @@ export function createRelayServer({ token } = {}) {
   function registerHost(ws, frame) {
     const pairingCode = normalizePairingCode(frame.pairingCode || createPairingCode());
     const previous = hostsByPairingCode.get(pairingCode);
-    if (previous && previous.ws !== ws) {
-      closeQuietly(previous.ws, 4001, "host replaced");
-    }
+    const clients = previous?.clients ?? new Set();
 
     const host = {
       ws,
       hostId: frame.hostId || `host_${crypto.randomUUID()}`,
       pairingCode,
       meta: frame.meta || {},
-      clients: new Set(),
+      clients,
     };
     hostsByPairingCode.set(pairingCode, host);
+    for (const clientWs of clients) {
+      const client = clientsBySocket.get(clientWs);
+      if (client) client.host = host;
+    }
     ws.role = "host";
     ws.pairingCode = pairingCode;
     send(ws, {
@@ -111,6 +119,9 @@ export function createRelayServer({ token } = {}) {
       pairingCode,
       meta: host.meta,
     });
+    if (previous && previous.ws !== ws) {
+      closeQuietly(previous.ws, 4001, "host replaced");
+    }
   }
 
   function joinClient(ws, frame) {
@@ -149,6 +160,7 @@ export function createRelayServer({ token } = {}) {
     if (ws.role === "host") {
       const host = hostsByPairingCode.get(ws.pairingCode);
       if (!host) throw new Error("host is not registered");
+      stats.framesFromHosts += 1;
       for (const clientWs of host.clients) {
         send(clientWs, { type: "frame", payload: frame.payload });
       }
@@ -158,6 +170,13 @@ export function createRelayServer({ token } = {}) {
     if (ws.role === "client") {
       const client = clientsBySocket.get(ws);
       if (!client) throw new Error("client is not joined");
+      stats.framesFromClients += 1;
+      if (frame.payload.type === "command") {
+        stats.commandsFromClients += 1;
+        console.log(
+          `[codebuddy-relay] command ${frame.payload.name} ${frame.payload.id} from ${client.clientId}`
+        );
+      }
       send(client.host.ws, { type: "frame", payload: frame.payload });
       return;
     }

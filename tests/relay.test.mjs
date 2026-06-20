@@ -101,6 +101,60 @@ test("relay rejects non CodeBuddyRemote protocol payloads", async () => {
   });
 });
 
+test("relay keeps joined clients attached when a host reconnects", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const oldHost = new WebSocket(relayUrl);
+    const newHost = new WebSocket(relayUrl);
+    const phone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(oldHost);
+      oldHost.send(JSON.stringify({ type: "host.register", pairingCode: "SWAP1" }));
+      await readUntil(oldHost, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(phone);
+      phone.send(JSON.stringify({ type: "client.join", pairingCode: "SWAP1" }));
+      await readUntil(phone, (frame) => frame.type === "client.joined");
+
+      await waitForOpen(newHost);
+      newHost.send(JSON.stringify({ type: "host.register", pairingCode: "SWAP1" }));
+      await readUntil(newHost, (frame) => frame.type === "host.registered");
+
+      const command = createCommand({
+        sessionId: "local-host",
+        name: "listSessions",
+        payload: {},
+      });
+      phone.send(JSON.stringify({ type: "frame", payload: command }));
+
+      const forwarded = await readUntil(
+        newHost,
+        (frame) => frame.type === "frame" && frame.payload?.id === command.id
+      );
+      assert.equal(forwarded.payload.name, "listSessions");
+
+      newHost.send(JSON.stringify({
+        type: "frame",
+        payload: {
+          type: "response",
+          requestId: command.id,
+          ok: true,
+          body: { sessions: [] },
+        },
+      }));
+      const response = await readUntil(
+        phone,
+        (frame) => frame.type === "frame" && frame.payload?.requestId === command.id
+      );
+      assert.equal(response.payload.ok, true);
+    } finally {
+      oldHost.close();
+      newHost.close();
+      phone.close();
+    }
+  });
+});
+
 function waitForOpen(ws) {
   if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {
