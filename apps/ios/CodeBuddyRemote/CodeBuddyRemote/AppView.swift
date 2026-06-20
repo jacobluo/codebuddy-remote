@@ -47,7 +47,7 @@ struct AppView: View {
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
-  @AppStorage("remote.chatLog.v1") private var persistedChatLog = ""
+  @AppStorage("remote.chatLog.v2") private var persistedChatLog = ""
 
   @State private var sessions: [RemoteSession] = []
   @State private var selectedSessionId = "terminal-cli"

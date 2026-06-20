@@ -182,7 +182,15 @@ struct TerminalScreen {
   private func shouldKeepAssistantLine(_ line: String) -> Bool {
     if line.isEmpty { return false }
     if isTerminalBoundary(line) { return false }
+    if line.hasPrefix("Explore ·") { return false }
+    if line.hasPrefix("Tip:") { return false }
     if line.hasPrefix("Bash(") || line.hasPrefix("Read(") || line.hasPrefix("Search(") {
+      return false
+    }
+    if line.contains("· Bash(") || line.contains("· Read(") || line.contains("· Search(") {
+      return false
+    }
+    if line.contains("· Edit(") || line.contains("· Write(") || line.contains("· Glob(") {
       return false
     }
     if line.hasPrefix("⎿ ") { return false }
