@@ -73,6 +73,17 @@ struct AppView: View {
     }
   }
 
+  private struct AssistantBlock {
+    enum Kind {
+      case paragraph
+      case heading
+      case bullet
+    }
+
+    var kind: Kind
+    var text: String
+  }
+
   @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
   @AppStorage("remote.baseURL") private var baseURL = RemoteConfig.defaultValue.baseURL
   @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
@@ -137,7 +148,7 @@ struct AppView: View {
               .id("conversation-bottom")
           }
           .padding(.horizontal, 20)
-          .padding(.top, 18)
+          .padding(.top, 10)
           .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
@@ -253,15 +264,13 @@ struct AppView: View {
     .padding(.bottom, 12)
     .background {
       Rectangle()
-        .fill(.ultraThinMaterial)
-        .mask(
-          LinearGradient(
-            colors: [.black, .black.opacity(0)],
-            startPoint: .top,
-            endPoint: .bottom
-          )
-        )
-        .ignoresSafeArea()
+        .fill(.regularMaterial)
+        .ignoresSafeArea(edges: .top)
+    }
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(Color(.separator).opacity(0.25))
+        .frame(height: 0.5)
     }
   }
 
@@ -392,11 +401,7 @@ struct AppView: View {
           .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       }
     case .assistant:
-      Text(entry.text)
-        .font(.body)
-        .foregroundStyle(.primary)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      assistantMessage(entry.text)
     case .system:
       Text(entry.text)
         .font(.body)
@@ -405,6 +410,38 @@ struct AppView: View {
     case .tool, .command, .test, .plan, .diff, .permission, .artifact:
       activityCard(entry)
     }
+  }
+
+  private func assistantMessage(_ text: String) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      ForEach(Array(assistantBlocks(from: text).enumerated()), id: \.offset) { _, block in
+        switch block.kind {
+        case .heading:
+          Text(block.text)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.primary)
+            .padding(.top, 2)
+        case .bullet:
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("•")
+              .font(.body.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .frame(width: 10, alignment: .leading)
+            Text(block.text)
+              .font(.body)
+              .foregroundStyle(.primary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        case .paragraph:
+          Text(block.text)
+            .font(.body)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .lineSpacing(3)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func activityCard(_ entry: ChatEntry) -> some View {
@@ -981,6 +1018,74 @@ struct AppView: View {
     } else {
       expandedActivityEntryIds.insert(entry.id)
     }
+  }
+
+  private func assistantBlocks(from text: String) -> [AssistantBlock] {
+    var blocks: [AssistantBlock] = []
+
+    for rawLine in text.components(separatedBy: .newlines) {
+      let line = cleanAssistantDisplayLine(rawLine)
+      guard !line.isEmpty else { continue }
+
+      if let bulletText = bulletText(from: line) {
+        blocks.append(AssistantBlock(kind: .bullet, text: bulletText))
+        continue
+      }
+
+      if isAssistantHeading(line) {
+        blocks.append(AssistantBlock(kind: .heading, text: line))
+        continue
+      }
+
+      if let last = blocks.indices.last {
+        switch blocks[last].kind {
+        case .paragraph, .bullet:
+          blocks[last].text = "\(blocks[last].text) \(line)"
+        case .heading:
+          blocks.append(AssistantBlock(kind: .paragraph, text: line))
+        }
+      } else {
+        blocks.append(AssistantBlock(kind: .paragraph, text: line))
+      }
+    }
+
+    return blocks
+  }
+
+  private func cleanAssistantDisplayLine(_ line: String) -> String {
+    line
+      .replacingOccurrences(of: "\u{FFFD}", with: "")
+      .replacingOccurrences(of: "几个值得意的点", with: "几个值得注意的点")
+      .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func bulletText(from line: String) -> String? {
+    let patterns = [
+      #"^[-•]\s+(.+)$"#,
+      #"^\d+[.)]\s+(.+)$"#,
+    ]
+
+    for pattern in patterns {
+      guard let range = line.range(of: pattern, options: .regularExpression) else {
+        continue
+      }
+      let matched = String(line[range])
+      if let textRange = matched.range(of: #"^([-•]|\d+[.)])\s+"#, options: .regularExpression) {
+        return String(matched[textRange.upperBound...])
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+    }
+
+    return nil
+  }
+
+  private func isAssistantHeading(_ line: String) -> Bool {
+    guard line.count <= 28 else { return false }
+    if line.hasSuffix("：") || line.hasSuffix(":") {
+      return true
+    }
+    return false
   }
 
   private func sanitizedAssistantText(_ text: String) -> String {
