@@ -31,6 +31,15 @@ export class MockCliAdapter {
     };
   }
 
+  async sendTerminalInput(sessionId) {
+    this.#assertSession(sessionId);
+    return {
+      conversationId: "mock-conversation",
+      terminalOnly: true,
+      status: this.#session.state,
+    };
+  }
+
   async interrupt(sessionId) {
     this.#assertSession(sessionId);
     this.#session.state = "interrupted";

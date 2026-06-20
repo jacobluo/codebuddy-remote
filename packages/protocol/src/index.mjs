@@ -3,6 +3,7 @@ export const COMMAND_NAMES = new Set([
   "listEvents",
   "selectSession",
   "sendPrompt",
+  "sendTerminalInput",
   "approveTool",
   "rejectTool",
   "interrupt",

@@ -24,6 +24,18 @@ test("creates a valid sendPrompt command with a generated id", () => {
   assert.doesNotThrow(() => validateCommand(command));
 });
 
+test("creates a valid terminal input command", () => {
+  const command = createCommand({
+    sessionId: "session_1",
+    name: "sendTerminalInput",
+    payload: { text: "1", label: "允许一次" },
+  });
+
+  assert.equal(command.name, "sendTerminalInput");
+  assert.equal(command.payload.text, "1");
+  assert.doesNotThrow(() => validateCommand(command));
+});
+
 test("rejects unknown commands and events", () => {
   assert.ok(COMMAND_NAMES.has("interrupt"));
   assert.ok(EVENT_NAMES.has("assistant.delta"));

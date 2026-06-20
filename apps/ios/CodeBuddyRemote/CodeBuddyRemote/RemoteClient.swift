@@ -33,6 +33,13 @@ struct RemoteClient {
     )
   }
 
+  func sendTerminalInput(sessionId: String, text: String, label: String) async throws {
+    let _: CommandEnvelope = try await post(
+      "/api/sessions/\(sessionId)/input",
+      body: ["text": text, "label": label]
+    )
+  }
+
   func interrupt(sessionId: String) async throws {
     let _: CommandEnvelope = try await post(
       "/api/sessions/\(sessionId)/interrupt",

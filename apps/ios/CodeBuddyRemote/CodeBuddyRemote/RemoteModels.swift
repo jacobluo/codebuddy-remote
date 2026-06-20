@@ -77,6 +77,13 @@ struct RemoteEvent: Codable, Identifiable, Equatable {
 struct EventPayload: Codable, Equatable {
   let text: String?
   let status: String?
+  let kind: String?
+  let title: String?
+  let toolName: String?
+  let command: String?
+  let target: String?
+  let additions: Int?
+  let deletions: Int?
 }
 
 struct CommandEnvelope: Codable {

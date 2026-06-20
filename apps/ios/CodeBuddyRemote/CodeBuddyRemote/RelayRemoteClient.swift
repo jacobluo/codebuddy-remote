@@ -114,6 +114,14 @@ final class RelayRemoteClient {
     )
   }
 
+  func sendTerminalInput(sessionId: String, text: String, label: String) async throws {
+    let _: CommandEnvelope = try await request(
+      name: "sendTerminalInput",
+      sessionId: sessionId,
+      payload: ["text": text, "label": label]
+    )
+  }
+
   func interrupt(sessionId: String) async throws {
     let _: CommandEnvelope = try await request(
       name: "interrupt",

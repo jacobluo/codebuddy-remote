@@ -28,16 +28,48 @@ struct AppView: View {
       case user
       case assistant
       case system
+      case tool
+      case command
+      case test
+      case plan
+      case diff
+      case permission
+      case artifact
     }
 
     let id: UUID
     let role: Role
+    var title: String
     var text: String
+    var status: String
+    var toolName: String
+    var command: String
+    var target: String
+    var additions: Int
+    var deletions: Int
 
-    init(id: UUID = UUID(), role: Role, text: String) {
+    init(
+      id: UUID = UUID(),
+      role: Role,
+      title: String = "",
+      text: String = "",
+      status: String = "",
+      toolName: String = "",
+      command: String = "",
+      target: String = "",
+      additions: Int = 0,
+      deletions: Int = 0
+    ) {
       self.id = id
       self.role = role
+      self.title = title
       self.text = text
+      self.status = status
+      self.toolName = toolName
+      self.command = command
+      self.target = target
+      self.additions = additions
+      self.deletions = deletions
     }
   }
 
@@ -47,13 +79,11 @@ struct AppView: View {
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
-  @AppStorage("remote.chatLog.v2") private var persistedChatLog = ""
+  @AppStorage("remote.chatLog.v3") private var persistedChatLog = ""
 
   @State private var sessions: [RemoteSession] = []
   @State private var selectedSessionId = "terminal-cli"
   @State private var terminal = TerminalScreen()
-  @State private var terminalAssistantMessages: [String] = []
-  @State private var terminalAssistantEntryIds: [UUID] = []
   @State private var chatEntries: [ChatEntry] = []
   @State private var latestHandledSeq = 0
   @State private var statusText = "未连接"
@@ -353,6 +383,174 @@ struct AppView: View {
         .font(.body)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
+    case .tool, .command, .test, .plan, .diff, .permission, .artifact:
+      activityCard(entry)
+    }
+  }
+
+  private func activityCard(_ entry: ChatEntry) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .center, spacing: 9) {
+        Image(systemName: iconName(for: entry.role, status: entry.status))
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(tint(for: entry.role, status: entry.status))
+          .frame(width: 20)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(cardTitle(entry))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+          if !entry.status.isEmpty {
+            Text(statusLabel(entry.status))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        Spacer(minLength: 8)
+
+        if entry.role == .diff {
+          HStack(spacing: 6) {
+            if entry.additions > 0 {
+              Text("+\(entry.additions)")
+                .foregroundStyle(.green)
+            }
+            if entry.deletions > 0 {
+              Text("-\(entry.deletions)")
+                .foregroundStyle(.red)
+            }
+          }
+          .font(.caption.weight(.semibold))
+        }
+      }
+
+      if !entry.command.isEmpty {
+        Text(entry.command)
+          .font(.system(.caption, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .lineLimit(3)
+          .textSelection(.enabled)
+      } else if !entry.target.isEmpty, entry.target != entry.title {
+        Text(entry.target)
+          .font(.system(.caption, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .textSelection(.enabled)
+      }
+
+      if !entry.text.isEmpty, entry.text != entry.title, entry.text != entry.command {
+        Text(entry.text)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+      }
+
+      if entry.role == .permission, entry.status == "waiting" {
+        HStack(spacing: 8) {
+          Button("允许一次") {
+            sendControlInput("1", label: "允许一次")
+          }
+          Button("本次允许") {
+            sendControlInput("2", label: "本次允许")
+          }
+          Button("拒绝") {
+            sendControlInput("3", label: "拒绝")
+          }
+        }
+        .font(.caption.weight(.semibold))
+        .buttonStyle(.bordered)
+        .disabled(!isStreaming || selectedSessionId.isEmpty)
+      }
+    }
+    .padding(.horizontal, 14)
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color(.secondarySystemBackground))
+    .overlay {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+  }
+
+  private func cardTitle(_ entry: ChatEntry) -> String {
+    if !entry.title.isEmpty {
+      return entry.title
+    }
+    if !entry.target.isEmpty {
+      return entry.target
+    }
+    if !entry.command.isEmpty {
+      return entry.command
+    }
+    return entry.role.rawValue
+  }
+
+  private func iconName(for role: ChatEntry.Role, status: String) -> String {
+    if status == "failed" {
+      return "xmark.circle.fill"
+    }
+    if status == "passed" {
+      return "checkmark.circle.fill"
+    }
+
+    switch role {
+    case .tool:
+      return "magnifyingglass"
+    case .command:
+      return "terminal"
+    case .test:
+      return "checklist"
+    case .plan:
+      return "list.bullet.rectangle"
+    case .diff:
+      return "doc.text.magnifyingglass"
+    case .permission:
+      return "hand.raised"
+    case .artifact:
+      return "paperclip"
+    case .user, .assistant, .system:
+      return "circle"
+    }
+  }
+
+  private func tint(for role: ChatEntry.Role, status: String) -> Color {
+    if status == "failed" {
+      return .red
+    }
+    if status == "passed" {
+      return .green
+    }
+    if role == .permission {
+      return .orange
+    }
+    if role == .diff {
+      return .purple
+    }
+    if role == .plan {
+      return .blue
+    }
+    return .secondary
+  }
+
+  private func statusLabel(_ status: String) -> String {
+    switch status {
+    case "running":
+      return "运行中"
+    case "completed":
+      return "已完成"
+    case "passed":
+      return "通过"
+    case "failed":
+      return "失败"
+    case "changed":
+      return "有变更"
+    case "waiting":
+      return "等待确认"
+    default:
+      return status
     }
   }
 
@@ -423,8 +621,6 @@ struct AppView: View {
     disconnect()
     errorMessage = nil
     terminal = TerminalScreen()
-    terminalAssistantMessages.removeAll()
-    terminalAssistantEntryIds.removeAll()
     chatEntries.removeAll()
     latestHandledSeq = 0
     statusText = "正在连接"
@@ -500,6 +696,22 @@ struct AppView: View {
     }
   }
 
+  private func sendControlInput(_ text: String, label: String) {
+    errorMessage = nil
+    Task {
+      do {
+        if connectionMode == .local {
+          try await client.sendTerminalInput(sessionId: selectedSessionId, text: text, label: label)
+        } else {
+          try await relayClient?.sendTerminalInput(sessionId: selectedSessionId, text: text, label: label)
+        }
+        errorMessage = nil
+      } catch {
+        errorMessage = error.localizedDescription
+      }
+    }
+  }
+
   private func runAction(_ action: SessionAction) {
     errorMessage = nil
     Task {
@@ -540,10 +752,19 @@ struct AppView: View {
       if let text = event.payload.text, !text.isEmpty {
         appendAssistantMessage(text)
       }
+    case "tool.requested":
+      appendActivityCard(from: event.payload, defaultStatus: "running")
+    case "tool.output":
+      appendActivityCard(from: event.payload, defaultStatus: "completed")
+    case "tool.permissionRequested":
+      appendActivityCard(from: event.payload, defaultStatus: "waiting")
+    case "tool.permissionResolved":
+      resolvePermissionCard(from: event.payload)
+    case "diff.created":
+      appendActivityCard(from: event.payload, defaultStatus: "changed")
     case "terminal.output":
       if let text = event.payload.text {
         terminal.write(text)
-        syncAssistantMessagesFromTerminal()
       }
     case "session.state":
       if let status = event.payload.status {
@@ -574,31 +795,64 @@ struct AppView: View {
     persistChatEntries()
   }
 
-  private func syncAssistantMessagesFromTerminal() {
-    let messages = terminal.assistantMessages
-    guard messages != terminalAssistantMessages else { return }
+  private func appendActivityCard(from payload: EventPayload, defaultStatus: String) {
+    let entry = ChatEntry(
+      role: role(for: payload.kind),
+      title: payload.title ?? "",
+      text: payload.text ?? "",
+      status: payload.status ?? defaultStatus,
+      toolName: payload.toolName ?? "",
+      command: payload.command ?? "",
+      target: payload.target ?? "",
+      additions: payload.additions ?? 0,
+      deletions: payload.deletions ?? 0
+    )
 
-    for index in messages.indices {
-      if index < terminalAssistantEntryIds.count {
-        let entryId = terminalAssistantEntryIds[index]
-        if let entryIndex = chatEntries.firstIndex(where: { $0.id == entryId }) {
-          chatEntries[entryIndex].text = messages[index]
-        }
-      } else {
-        let entry = ChatEntry(role: .assistant, text: messages[index])
-        terminalAssistantEntryIds.append(entry.id)
-        chatEntries.append(entry)
-      }
+    if let last = chatEntries.last, isSameActivity(last, entry) {
+      chatEntries[chatEntries.count - 1] = entry
+    } else {
+      chatEntries.append(entry)
     }
-
-    if messages.count < terminalAssistantEntryIds.count {
-      let staleIds = Set(terminalAssistantEntryIds.dropFirst(messages.count))
-      chatEntries.removeAll { staleIds.contains($0.id) }
-      terminalAssistantEntryIds = Array(terminalAssistantEntryIds.prefix(messages.count))
-    }
-
-    terminalAssistantMessages = messages
     persistChatEntries()
+  }
+
+  private func resolvePermissionCard(from payload: EventPayload) {
+    if let index = chatEntries.lastIndex(where: { $0.role == .permission && $0.status == "waiting" }) {
+      chatEntries[index].title = payload.title ?? chatEntries[index].title
+      chatEntries[index].text = payload.text ?? chatEntries[index].text
+      chatEntries[index].status = payload.status ?? "completed"
+      persistChatEntries()
+      return
+    }
+
+    appendActivityCard(from: payload, defaultStatus: "completed")
+  }
+
+  private func role(for kind: String?) -> ChatEntry.Role {
+    switch kind {
+    case "command":
+      return .command
+    case "test":
+      return .test
+    case "plan":
+      return .plan
+    case "diff", "edit":
+      return .diff
+    case "permission":
+      return .permission
+    case "artifact":
+      return .artifact
+    default:
+      return .tool
+    }
+  }
+
+  private func isSameActivity(_ lhs: ChatEntry, _ rhs: ChatEntry) -> Bool {
+    lhs.role == rhs.role &&
+      lhs.title == rhs.title &&
+      lhs.text == rhs.text &&
+      lhs.command == rhs.command &&
+      lhs.target == rhs.target
   }
 
   private func loadPersistedChatIfNeeded() {

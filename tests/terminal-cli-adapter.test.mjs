@@ -59,11 +59,34 @@ test("terminal CLI adapter writes phone prompts into the same terminal session",
   assert.equal(result.terminalOnly, true);
 });
 
+test("terminal CLI adapter writes raw terminal input without clearing the prompt", async () => {
+  const calls = [];
+  const adapter = new TerminalCliAdapter({
+    cwd: "/tmp/workspace",
+    submitDelayMs: 0,
+    startTerminal: async () => ({
+      write: (text) => calls.push(["write", text]),
+      close: () => calls.push(["close"]),
+      closed: new Promise(() => {}),
+    }),
+  });
+
+  const result = await adapter.sendTerminalInput("terminal-cli", "1");
+
+  assert.deepEqual(calls, [
+    ["write", "1"],
+    ["write", "\r"],
+  ]);
+  assert.equal(result.conversationId, "terminal-cli");
+  assert.equal(result.terminalOnly, true);
+});
+
 test("terminal CLI adapter emits terminal output chunks as normalized events", async () => {
   let onData;
   const events = [];
   const adapter = new TerminalCliAdapter({
     cwd: "/tmp/workspace",
+    semanticParser: { write: () => [] },
     startTerminal: async (options) => {
       onData = options.onData;
       return {
@@ -86,6 +109,35 @@ test("terminal CLI adapter emits terminal output chunks as normalized events", a
       payload: { text: "CodeBuddy ready" },
     },
   ]);
+});
+
+test("terminal CLI adapter emits semantic events parsed from terminal output", async () => {
+  let onData;
+  const events = [];
+  const adapter = new TerminalCliAdapter({
+    cwd: "/tmp/workspace",
+    startTerminal: async (options) => {
+      onData = options.onData;
+      return {
+        write: () => {},
+        close: () => {},
+        closed: new Promise(() => {}),
+      };
+    },
+  });
+  adapter.onEvent((event) => events.push(event));
+
+  await adapter.start();
+  onData("● Bash(npm test)\n  ⎿ 32 tests passed\n");
+
+  assert.deepEqual(
+    events.map((event) => [event.name, event.payload.kind, event.payload.title]),
+    [
+      ["terminal.output", undefined, undefined],
+      ["tool.requested", "command", "npm test"],
+      ["tool.output", "test", "32 tests passed"],
+    ]
+  );
 });
 
 test("python PTY bridge can run a simple terminal command", async () => {

@@ -202,3 +202,53 @@ test("terminal-only prompts do not create empty assistant messages", async () =>
     await host.close();
   }
 });
+
+test("terminal input sends raw controls without recording a user message", async () => {
+  let rawInput = "";
+  const adapter = {
+    listSessions() {
+      return [{ id: "terminal-cli", source: "cli-terminal", workspace: "mock", state: "interactive" }];
+    },
+    getState() {
+      return { sessionId: "terminal-cli", source: "cli-terminal", workspace: "mock", status: "interactive" };
+    },
+    onEvent() {},
+    async sendPrompt() {
+      throw new Error("sendPrompt should not be used for raw terminal input");
+    },
+    async sendTerminalInput(_sessionId, text) {
+      rawInput = text;
+      return { conversationId: "terminal-cli", terminalOnly: true, status: "interactive" };
+    },
+    async interrupt() {
+      return this.getState();
+    },
+    async resume() {
+      return this.getState();
+    },
+    async close() {},
+  };
+  const host = createLocalHost({ adapter, token: "test-token" });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const sent = await requestJson(`${baseUrl}/api/sessions/terminal-cli/input`, {
+      method: "POST",
+      body: JSON.stringify({ text: "1", label: "允许一次" }),
+    });
+    assert.equal(sent.response.status, 202);
+    assert.equal(sent.body.command.name, "sendTerminalInput");
+    assert.equal(rawInput, "1");
+
+    const events = await requestJson(`${baseUrl}/api/events?after=0`);
+    assert.deepEqual(
+      events.body.events.map((event) => event.name),
+      ["tool.permissionResolved", "session.state"]
+    );
+    assert.equal(events.body.events[0].payload.title, "允许一次");
+  } finally {
+    await host.close();
+  }
+});

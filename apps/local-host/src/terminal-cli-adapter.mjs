@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { TerminalSemanticParser } from "./terminal-semantic-parser.mjs";
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PTY_BRIDGE = path.join(MODULE_DIR, "pty-bridge.py");
 
@@ -22,6 +24,7 @@ export class TerminalCliAdapter {
     env = process.env,
     submitDelayMs = 50,
     clearInputSequence = "\x1b\x1b",
+    semanticParser = new TerminalSemanticParser(),
   } = {}) {
     this.cliPath = cliPath;
     this.args = args;
@@ -33,6 +36,7 @@ export class TerminalCliAdapter {
     this.env = env;
     this.submitDelayMs = submitDelayMs;
     this.clearInputSequence = clearInputSequence;
+    this.semanticParser = semanticParser;
   }
 
   listSessions() {
@@ -99,6 +103,20 @@ export class TerminalCliAdapter {
     };
   }
 
+  async sendTerminalInput(sessionId, text) {
+    this.#assertSession(sessionId);
+    await this.start();
+    this.#terminal.write(text);
+    await delay(this.submitDelayMs);
+    this.#terminal.write("\r");
+    this.#state = "interactive";
+    return {
+      conversationId: this.#sessionId,
+      terminalOnly: true,
+      status: this.#state,
+    };
+  }
+
   async interrupt(sessionId) {
     this.#assertSession(sessionId);
     if (this.#terminal) this.#terminal.write("\x03");
@@ -132,6 +150,15 @@ export class TerminalCliAdapter {
       payload: { text },
     };
     for (const subscriber of this.#subscribers) subscriber(event);
+    for (const semantic of this.semanticParser.write(text)) {
+      const semanticEvent = {
+        sessionId: this.#sessionId,
+        conversationId: this.#sessionId,
+        name: semantic.name,
+        payload: semantic.payload,
+      };
+      for (const subscriber of this.#subscribers) subscriber(semanticEvent);
+    }
   }
 
   #assertSession(sessionId) {

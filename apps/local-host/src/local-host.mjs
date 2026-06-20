@@ -100,6 +100,25 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
         return;
       }
 
+      const inputMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/input$/);
+      if (req.method === "POST" && inputMatch) {
+        const sessionId = inputMatch[1];
+        const body = await readJson(req);
+        const text = String(body.text || "");
+        if (!text) {
+          sendJson(res, 400, { ok: false, error: "text is required" });
+          return;
+        }
+
+        const command = createCommand({
+          sessionId,
+          name: "sendTerminalInput",
+          payload: { text, label: body.label || "" },
+        });
+        sendJson(res, 202, await executeCommand(command));
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/api/events") {
         const after = Number(url.searchParams.get("after") || 0);
         sendJson(res, 200, {
@@ -194,6 +213,35 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
         conversationId: result.conversationId,
         name: "session.state",
         payload: { status: result.status || "idle" },
+      });
+
+      return { command };
+    }
+
+    if (command.name === "sendTerminalInput") {
+      const text = String(command.payload.text || "");
+      if (!text) throw new Error("text is required");
+      if (typeof adapter.sendTerminalInput !== "function") {
+        throw new Error("adapter does not support terminal input");
+      }
+
+      const result = await adapter.sendTerminalInput(command.sessionId, text);
+      pushEvent({
+        sessionId: command.sessionId,
+        conversationId: result.conversationId,
+        name: "tool.permissionResolved",
+        payload: {
+          kind: "permission",
+          title: command.payload.label || "已发送确认",
+          text: command.payload.label || text,
+          status: "completed",
+        },
+      });
+      pushEvent({
+        sessionId: command.sessionId,
+        conversationId: result.conversationId,
+        name: "session.state",
+        payload: { status: result.status || "interactive" },
       });
 
       return { command };
