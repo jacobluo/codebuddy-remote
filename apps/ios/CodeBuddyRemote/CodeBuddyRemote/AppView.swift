@@ -128,7 +128,7 @@ struct AppView: View {
 
       ScrollViewReader { proxy in
         ScrollView(.vertical) {
-          LazyVStack(alignment: .leading, spacing: 24) {
+          LazyVStack(alignment: .leading, spacing: 16) {
             ForEach(chatEntries) { entry in
               messageRow(entry)
             }
@@ -443,7 +443,7 @@ struct AppView: View {
       }
     }
     .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(.vertical, isExpanded ? 12 : 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color(.secondarySystemBackground))
     .overlay {
@@ -464,17 +464,24 @@ struct AppView: View {
         .foregroundStyle(tint(for: entry.role, status: entry.status))
         .frame(width: 20)
 
-      VStack(alignment: .leading, spacing: 2) {
+      if isExpanded {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(cardTitle(entry))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+          if !entry.status.isEmpty {
+            Text(statusLabel(entry.status))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+        }
+      } else {
         Text(cardTitle(entry))
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.primary)
-          .lineLimit(isExpanded ? 2 : 1)
-        if !entry.status.isEmpty {
-          Text(statusLabel(entry.status))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
+          .lineLimit(1)
       }
 
       Spacer(minLength: 8)
@@ -494,6 +501,13 @@ struct AppView: View {
       }
 
       if canExpand {
+        if !isExpanded, !entry.status.isEmpty {
+          Text(statusLabel(entry.status))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+
         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
           .font(.caption.weight(.semibold))
           .foregroundStyle(.tertiary)
