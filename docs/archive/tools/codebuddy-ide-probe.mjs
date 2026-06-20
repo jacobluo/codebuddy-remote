@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..", "..");
-const reportsDir = path.join(repoRoot, "reports", "archive", "generated");
-fs.mkdirSync(reportsDir, { recursive: true });
+const generatedDir = path.join(repoRoot, "docs", "archive", "generated");
+fs.mkdirSync(generatedDir, { recursive: true });
 
 const candidates = {
   app: [
@@ -233,7 +233,7 @@ const report = {
   },
 };
 
-const jsonPath = path.join(reportsDir, "codebuddy-ide-probe.json");
+const jsonPath = path.join(generatedDir, "codebuddy-ide-probe.json");
 fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 
 function countPattern(app, pattern) {
@@ -302,7 +302,7 @@ ${mdList((firstApp?.webviewMessageLikeStrings ?? []).slice(0, 80).map((s) => `\`
 - A true “phone controls existing IDE session” feature still needs one of these verified bridges: official local API from the active IDE agent, callable extension commands that can submit user prompts/approvals, or a product-level change inside CodeBuddy.
 `;
 
-const mdPath = path.join(reportsDir, "codebuddy-ide-feasibility.md");
+const mdPath = path.join(generatedDir, "codebuddy-ide-feasibility.md");
 fs.writeFileSync(mdPath, md);
 
 console.log(JSON.stringify({ jsonPath, mdPath }, null, 2));

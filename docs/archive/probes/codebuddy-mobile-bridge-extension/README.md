@@ -23,7 +23,7 @@ Manual runtime test:
 
 ```sh
 /Users/robiluo/.codebuddy/bin/buddy \
-  --extensionDevelopmentPath "$PWD/reports/archive/probes/codebuddy-mobile-bridge-extension" \
+  --extensionDevelopmentPath "$PWD/docs/archive/probes/codebuddy-mobile-bridge-extension" \
   "$PWD"
 ```
 

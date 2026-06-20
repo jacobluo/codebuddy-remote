@@ -6,7 +6,7 @@
 
 请优先阅读：
 
-- `reports/codebuddy-remote-final-plan.md`
+- `docs/codebuddy-remote-final-plan.md`
 
 一句话结论：
 
@@ -38,11 +38,13 @@ Local Host / Relay = 安全连接与事件转发层
 - `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端，连接本机 `codebuddy-remote`。
 - `packages/protocol/`：统一 command/event 协议工具。
 - `tests/`：协议和 Local Host 行为测试。
-- `reports/codebuddy-remote-final-plan.md`：当前最终方案。
-- `reports/archive/`：精简探索摘要、探针脚本和探针扩展。
-- `reports/archive/tools/codebuddy-ide-probe.mjs`：CodeBuddy IDE 静态探针脚本。
-- `reports/archive/probes/codebuddy-mobile-bridge-extension/`：VS Code 兼容 IDE bridge 探针扩展。
-- `reports/archive/probes/vsix/`：探针扩展 VSIX 打包元数据。
+- `docs/README.md`：文档入口和读取顺序。
+- `docs/codebuddy-remote-final-plan.md`：当前最终方案。
+- `docs/security-and-pairing-flow.md`：安全设计、扫码绑定和登录流程。
+- `docs/archive/`：精简探索摘要、探针脚本和探针扩展。
+- `docs/archive/tools/codebuddy-ide-probe.mjs`：CodeBuddy IDE 静态探针脚本。
+- `docs/archive/probes/codebuddy-mobile-bridge-extension/`：VS Code 兼容 IDE bridge 探针扩展。
+- `docs/archive/probes/vsix/`：探针扩展 VSIX 打包元数据。
 
 ## 本地运行
 
