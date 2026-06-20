@@ -303,20 +303,27 @@ struct AppView: View {
     return "未连接"
   }
 
+  @ViewBuilder
   private var emptyConversation: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text("未连接")
-        .font(.title2.weight(.semibold))
-      Button {
-        connect()
-      } label: {
-        Label("连接", systemImage: "link")
+    if isStreaming {
+      Color.clear
+        .frame(maxWidth: .infinity, minHeight: 1)
+        .padding(.top, 48)
+    } else {
+      VStack(alignment: .leading, spacing: 14) {
+        Text("未连接")
+          .font(.title2.weight(.semibold))
+        Button {
+          connect()
+        } label: {
+          Label("连接", systemImage: "link")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isStreaming)
       }
-      .buttonStyle(.borderedProminent)
-      .disabled(isStreaming)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.top, 48)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, 48)
   }
 
   private var assistantTranscript: some View {
