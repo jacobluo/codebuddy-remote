@@ -44,6 +44,7 @@ struct AppView: View {
   @State private var prompt = ""
   @State private var isStreaming = false
   @State private var isSettingsPresented = false
+  @State private var isAttachmentMenuPresented = false
   @State private var hasLoadedPersistedChat = false
   @State private var errorMessage: String?
   @State private var streamTask: Task<Void, Never>?
@@ -224,85 +225,15 @@ struct AppView: View {
   }
 
   private var bottomArea: some View {
-    VStack(spacing: 10) {
-      if let errorMessage {
-        Text(errorMessage)
-          .font(.footnote)
-          .foregroundStyle(.red)
-          .lineLimit(2)
-          .multilineTextAlignment(.center)
-      } else {
-        Text(statusLine)
-          .font(.footnote.weight(.medium))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      }
-
-      HStack(spacing: 14) {
-        Button {
-          isSettingsPresented = true
-        } label: {
-          Image(systemName: "plus")
-            .font(.system(size: 27, weight: .regular))
-            .frame(width: 34, height: 34)
-            .foregroundStyle(.primary)
-        }
-        .accessibilityLabel("连接设置")
-        .buttonStyle(.plain)
-
-        ZStack(alignment: .topLeading) {
-          if prompt.isEmpty {
-            Text("向 CodeBuddy 提问")
-              .font(.body)
-              .foregroundStyle(.secondary)
-              .padding(.top, 8)
-              .padding(.leading, 5)
-          }
-
-          TextEditor(text: $prompt)
-            .font(.body)
-            .frame(minHeight: 36, maxHeight: 112)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .textInputAutocapitalization(.sentences)
-            .autocorrectionDisabled()
-        }
-
-        Button {
-          if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            isSettingsPresented = true
-          } else {
-            sendPrompt()
-          }
-        } label: {
-          Image(systemName: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "mic" : "arrow.up.circle.fill")
-            .font(.system(size: 28, weight: .semibold))
-            .foregroundStyle(.primary)
-        }
-        .accessibilityLabel(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "语音输入" : "发送")
-        .disabled(!isStreaming || selectedSessionId.isEmpty)
-      }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
-      .background(.ultraThinMaterial)
-      .clipShape(Capsule())
-      .shadow(color: .black.opacity(0.10), radius: 24, x: 0, y: 8)
-    }
-    .padding(.horizontal, 22)
-    .padding(.top, 12)
-    .padding(.bottom, 8)
-    .background {
-      Rectangle()
-        .fill(.ultraThinMaterial)
-        .mask(
-          LinearGradient(
-            colors: [.black.opacity(0), .black, .black],
-            startPoint: .top,
-            endPoint: .bottom
-          )
-        )
-        .ignoresSafeArea()
-    }
+    ChatInputDock(
+      prompt: $prompt,
+      isAttachmentMenuPresented: $isAttachmentMenuPresented,
+      statusLine: statusLine,
+      errorMessage: errorMessage,
+      isEnabled: isStreaming && !selectedSessionId.isEmpty,
+      onSend: sendPrompt,
+      onAttachment: handleAttachmentAction
+    )
   }
 
   private var statusLine: String {
@@ -466,6 +397,7 @@ struct AppView: View {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
+    isAttachmentMenuPresented = false
     shouldAutoScroll = true
     errorMessage = nil
     appendUserMessage(text)
@@ -482,6 +414,11 @@ struct AppView: View {
         errorMessage = error.localizedDescription
       }
     }
+  }
+
+  private func handleAttachmentAction(_ action: AttachmentAction) {
+    isAttachmentMenuPresented = false
+    errorMessage = "\(action.title)暂未接入"
   }
 
   private func sendControlInput(_ text: String, label: String) {

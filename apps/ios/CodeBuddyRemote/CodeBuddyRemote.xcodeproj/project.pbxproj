@@ -15,6 +15,7 @@
 		111111111111111111111107 /* RelayRemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111008 /* RelayRemoteClient.swift */; };
 		111111111111111111111108 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111010 /* ChatModels.swift */; };
 		111111111111111111111109 /* ChatMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111011 /* ChatMessageViews.swift */; };
+		111111111111111111111110 /* ChatInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111012 /* ChatInputBar.swift */; };
 		222222222222222222222101 /* ChatModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222001 /* ChatModelsTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -40,6 +41,7 @@
 		111111111111111111111009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		111111111111111111111010 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		111111111111111111111011 /* ChatMessageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageViews.swift; sourceTree = "<group>"; };
+		111111111111111111111012 /* ChatInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatInputBar.swift; sourceTree = "<group>"; };
 		222222222222222222222001 /* ChatModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelsTests.swift; sourceTree = "<group>"; };
 		222222222222222222222002 /* CodeBuddyRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodeBuddyRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -81,6 +83,7 @@
 				111111111111111111111002 /* AppView.swift */,
 				111111111111111111111010 /* ChatModels.swift */,
 				111111111111111111111011 /* ChatMessageViews.swift */,
+				111111111111111111111012 /* ChatInputBar.swift */,
 				111111111111111111111003 /* RemoteClient.swift */,
 				111111111111111111111008 /* RelayRemoteClient.swift */,
 				111111111111111111111004 /* RemoteModels.swift */,
@@ -222,6 +225,7 @@
 				111111111111111111111105 /* TerminalScreen.swift in Sources */,
 				111111111111111111111108 /* ChatModels.swift in Sources */,
 				111111111111111111111109 /* ChatMessageViews.swift in Sources */,
+				111111111111111111111110 /* ChatInputBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
