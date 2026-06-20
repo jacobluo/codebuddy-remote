@@ -13,6 +13,8 @@
 		111111111111111111111104 /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111004 /* RemoteModels.swift */; };
 		111111111111111111111105 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111005 /* TerminalScreen.swift */; };
 		111111111111111111111107 /* RelayRemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111008 /* RelayRemoteClient.swift */; };
+		111111111111111111111108 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111010 /* ChatModels.swift */; };
+		111111111111111111111109 /* ChatMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111011 /* ChatMessageViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +27,8 @@
 		111111111111111111111007 /* CodeBuddyRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodeBuddyRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		111111111111111111111008 /* RelayRemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRemoteClient.swift; sourceTree = "<group>"; };
 		111111111111111111111009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		111111111111111111111010 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		111111111111111111111011 /* ChatMessageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -54,6 +58,8 @@
 			children = (
 				111111111111111111111001 /* CodeBuddyRemoteApp.swift */,
 				111111111111111111111002 /* AppView.swift */,
+				111111111111111111111010 /* ChatModels.swift */,
+				111111111111111111111011 /* ChatMessageViews.swift */,
 				111111111111111111111003 /* RemoteClient.swift */,
 				111111111111111111111008 /* RelayRemoteClient.swift */,
 				111111111111111111111004 /* RemoteModels.swift */,
@@ -152,6 +158,8 @@
 				111111111111111111111107 /* RelayRemoteClient.swift in Sources */,
 				111111111111111111111104 /* RemoteModels.swift in Sources */,
 				111111111111111111111105 /* TerminalScreen.swift in Sources */,
+				111111111111111111111108 /* ChatModels.swift in Sources */,
+				111111111111111111111109 /* ChatMessageViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
