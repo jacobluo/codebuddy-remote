@@ -2,13 +2,18 @@
 import crypto from "node:crypto";
 import { realpathSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createLocalHost } from "./local-host.mjs";
 import { connectRelay } from "./relay-client.mjs";
 import { TerminalCliAdapter } from "./terminal-cli-adapter.mjs";
 
-export function createRunConfig({ cwd = process.cwd(), env = process.env } = {}) {
+export function createRunConfig({
+  cwd = process.cwd(),
+  env = process.env,
+  homeDir = os.homedir(),
+} = {}) {
   return {
     cwd,
     cliPath: env.CODEBUDDY_CLI_PATH || "codebuddy",
@@ -18,6 +23,7 @@ export function createRunConfig({ cwd = process.cwd(), env = process.env } = {})
     relayUrl: env.CODEBUDDY_REMOTE_RELAY_URL || "",
     relayToken: env.CODEBUDDY_REMOTE_RELAY_TOKEN || "",
     pairingCode: env.CODEBUDDY_REMOTE_PAIRING_CODE || createPairingCode(),
+    historyFile: env.CODEBUDDY_REMOTE_HISTORY_FILE || defaultHistoryFile(cwd, homeDir),
   };
 }
 
@@ -59,6 +65,7 @@ Environment:
   CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, optional
   CODEBUDDY_REMOTE_RELAY_TOKEN    Relay auth token, optional
   CODEBUDDY_REMOTE_PAIRING_CODE   Relay pairing code, generated when omitted
+  CODEBUDDY_REMOTE_HISTORY_FILE   Event history JSONL file, default: ~/.codebuddy-remote/history/<workspace>.jsonl
 `;
 }
 
@@ -85,6 +92,7 @@ export async function main() {
     adapter,
     token: config.token,
     host: config.host,
+    historyFile: config.historyFile,
   });
   const relay = connectRelay({
     relayUrl: config.relayUrl,
@@ -112,6 +120,7 @@ export async function main() {
   console.log(`  Local Host  http://${config.host}:${actualPort}`);
   console.log(`  Local Token ${config.token}`);
   console.log(`  CodeBuddy   ${config.cliPath}`);
+  console.log(`  History     ${config.historyFile}`);
   if (config.relayUrl) {
     console.log(`  Relay       ${config.relayUrl}`);
     console.log(`  Pairing     ${config.pairingCode}`);
@@ -155,6 +164,13 @@ function createToken() {
 
 function createPairingCode() {
   return crypto.randomBytes(4).toString("base64url").toUpperCase();
+}
+
+function defaultHistoryFile(cwd, homeDir) {
+  const workspaceName = path.basename(cwd) || "workspace";
+  const safeName = workspaceName.replace(/[^a-zA-Z0-9._-]+/g, "-") || "workspace";
+  const hash = crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 16);
+  return path.join(homeDir, ".codebuddy-remote", "history", `${safeName}-${hash}.jsonl`);
 }
 
 function safeRealpath(candidate, resolveRealpath) {

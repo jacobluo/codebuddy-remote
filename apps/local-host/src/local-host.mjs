@@ -1,4 +1,11 @@
 import http from "node:http";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
 
 import {
   createCommand,
@@ -11,10 +18,11 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
-export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
+export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFile = "" }) {
   let server;
-  let seq = 0;
-  const events = [];
+  const historyStore = createHistoryStore(historyFile);
+  let seq = historyStore.latestSeq;
+  const events = [...historyStore.events];
   const subscribers = new Set();
 
   adapter.onEvent?.((event) => {
@@ -30,6 +38,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
       payload,
     });
     events.push(event);
+    historyStore.append(event);
     for (const subscriber of subscribers) subscriber(event);
     return event;
   }
@@ -339,4 +348,66 @@ function writeSse(res, event) {
   res.write(`id: ${event.seq}\n`);
   res.write(`event: ${event.name}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+
+function createHistoryStore(historyFile) {
+  if (!historyFile) {
+    return {
+      events: [],
+      latestSeq: 0,
+      append() {},
+    };
+  }
+
+  const events = loadHistoryEvents(historyFile);
+  let latestSeq = events.reduce((maxSeq, event) => Math.max(maxSeq, event.seq || 0), 0);
+
+  return {
+    events,
+    get latestSeq() {
+      return latestSeq;
+    },
+    append(event) {
+      if (!shouldPersistEvent(event)) return;
+      try {
+        mkdirSync(dirname(historyFile), { recursive: true });
+        appendFileSync(historyFile, `${JSON.stringify(event)}\n`, "utf8");
+        latestSeq = Math.max(latestSeq, event.seq || 0);
+      } catch (error) {
+        console.warn(
+          "[codebuddy-remote] failed to persist event history:",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    },
+  };
+}
+
+function loadHistoryEvents(historyFile) {
+  if (!existsSync(historyFile)) return [];
+
+  try {
+    return readFileSync(historyFile, "utf8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line)];
+        } catch {
+          return [];
+        }
+      })
+      .filter((event) => event && typeof event.seq === "number");
+  } catch (error) {
+    console.warn(
+      "[codebuddy-remote] failed to load event history:",
+      error instanceof Error ? error.message : String(error)
+    );
+    return [];
+  }
+}
+
+function shouldPersistEvent(event) {
+  return event.name !== "terminal.output";
 }

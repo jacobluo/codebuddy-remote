@@ -19,6 +19,7 @@ test("codebuddy-remote exposes the expected package bin", () => {
 test("codebuddy-remote creates a run config from the current workspace", () => {
   const config = createRunConfig({
     cwd: "/Users/robiluo/aicoding/drink",
+    homeDir: "/Users/robiluo",
     env: {
       CODEBUDDY_REMOTE_HOST: "127.0.0.1",
       CODEBUDDY_REMOTE_PORT: "18080",
@@ -27,6 +28,7 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
       CODEBUDDY_REMOTE_RELAY_URL: "ws://relay.example.com/relay",
       CODEBUDDY_REMOTE_RELAY_TOKEN: "relay-token",
       CODEBUDDY_REMOTE_PAIRING_CODE: "PAIR123",
+      CODEBUDDY_REMOTE_HISTORY_FILE: "/tmp/custom-history.jsonl",
     },
   });
 
@@ -38,6 +40,20 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
   assert.equal(config.relayUrl, "ws://relay.example.com/relay");
   assert.equal(config.relayToken, "relay-token");
   assert.equal(config.pairingCode, "PAIR123");
+  assert.equal(config.historyFile, "/tmp/custom-history.jsonl");
+});
+
+test("codebuddy-remote derives a stable history file from the workspace", () => {
+  const config = createRunConfig({
+    cwd: "/Users/robiluo/aicoding/drink",
+    homeDir: "/Users/robiluo",
+    env: {},
+  });
+
+  assert.match(
+    config.historyFile,
+    /^\/Users\/robiluo\/\.codebuddy-remote\/history\/drink-[a-f0-9]{16}\.jsonl$/
+  );
 });
 
 test("codebuddy-remote configures plain CodeBuddy CLI as an interactive terminal process", () => {

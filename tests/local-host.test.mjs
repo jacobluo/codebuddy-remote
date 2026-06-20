@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { createLocalHost } from "../apps/local-host/src/local-host.mjs";
@@ -191,6 +194,56 @@ test("event history can be windowed without losing latest sequence", async () =>
       ["message-3", "message-4"]
     );
   });
+});
+
+test("event history survives a local host restart", async () => {
+  const historyDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-history-"));
+  const historyFile = join(historyDir, "events.jsonl");
+
+  try {
+    {
+      const adapter = new MockCliAdapter();
+      const host = createLocalHost({
+        adapter,
+        token: "test-token",
+        historyFile,
+      });
+      await host.listen(0);
+
+      host.pushEvent({
+        sessionId: "mock-session",
+        conversationId: "mock-conversation",
+        name: "assistant.delta",
+        payload: { text: "persisted reply" },
+      });
+
+      await host.close();
+    }
+
+    const adapter = new MockCliAdapter();
+    const host = createLocalHost({
+      adapter,
+      token: "test-token",
+      historyFile,
+    });
+    const server = await host.listen(0);
+    const { port } = server.address();
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const events = await requestJson(`${baseUrl}/api/events?after=0`);
+      assert.equal(events.response.status, 200);
+      assert.equal(events.body.latestSeq, 1);
+      assert.deepEqual(
+        events.body.events.map((event) => event.payload.text),
+        ["persisted reply"]
+      );
+    } finally {
+      await host.close();
+    }
+  } finally {
+    await rm(historyDir, { recursive: true, force: true });
+  }
 });
 
 test("terminal-only prompts do not create empty assistant messages", async () => {
