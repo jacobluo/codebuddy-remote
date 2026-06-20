@@ -84,6 +84,25 @@ struct AppView: View {
     var text: String
   }
 
+  private struct ActivityGroup: Identifiable {
+    let id: UUID
+    var entries: [ChatEntry]
+  }
+
+  private enum ConversationItem: Identifiable {
+    case entry(ChatEntry)
+    case activityGroup(ActivityGroup)
+
+    var id: UUID {
+      switch self {
+      case .entry(let entry):
+        entry.id
+      case .activityGroup(let group):
+        group.id
+      }
+    }
+  }
+
   @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
   @AppStorage("remote.baseURL") private var baseURL = RemoteConfig.defaultValue.baseURL
   @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
@@ -97,6 +116,7 @@ struct AppView: View {
   @State private var terminal = TerminalScreen()
   @State private var chatEntries: [ChatEntry] = []
   @State private var expandedActivityEntryIds = Set<UUID>()
+  @State private var expandedActivityGroupIds = Set<UUID>()
   @State private var chatUpdateToken = 0
   @State private var shouldAutoScroll = true
   @State private var latestHandledSeq = 0
@@ -132,6 +152,30 @@ struct AppView: View {
     sessions.first?.workspace ?? "codebuddy-remote"
   }
 
+  private var conversationItems: [ConversationItem] {
+    var items: [ConversationItem] = []
+    var pendingActivities: [ChatEntry] = []
+
+    func flushPendingActivities() {
+      guard !pendingActivities.isEmpty else { return }
+      let group = ActivityGroup(id: pendingActivities[0].id, entries: pendingActivities)
+      items.append(.activityGroup(group))
+      pendingActivities.removeAll()
+    }
+
+    for entry in chatEntries {
+      if isCollapsedIntoActivityGroup(entry) {
+        pendingActivities.append(entry)
+      } else {
+        flushPendingActivities()
+        items.append(.entry(entry))
+      }
+    }
+
+    flushPendingActivities()
+    return items
+  }
+
   var body: some View {
     ZStack {
       Color(.systemBackground)
@@ -140,8 +184,8 @@ struct AppView: View {
       ScrollViewReader { proxy in
         ScrollView(.vertical) {
           LazyVStack(alignment: .leading, spacing: 16) {
-            ForEach(chatEntries) { entry in
-              messageRow(entry)
+            ForEach(conversationItems) { item in
+              conversationRow(item)
             }
 
             emptyConversation
@@ -387,6 +431,16 @@ struct AppView: View {
   }
 
   @ViewBuilder
+  private func conversationRow(_ item: ConversationItem) -> some View {
+    switch item {
+    case .entry(let entry):
+      messageRow(entry)
+    case .activityGroup(let group):
+      activityGroupCard(group)
+    }
+  }
+
+  @ViewBuilder
   private func messageRow(_ entry: ChatEntry) -> some View {
     switch entry.role {
     case .user:
@@ -409,6 +463,58 @@ struct AppView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     case .tool, .command, .test, .plan, .diff, .permission, .artifact:
       activityCard(entry)
+    }
+  }
+
+  private func activityGroupCard(_ group: ActivityGroup) -> some View {
+    let isExpanded = expandedActivityGroupIds.contains(group.id)
+
+    return VStack(alignment: .leading, spacing: 8) {
+      Button {
+        toggleActivityGroupExpansion(group)
+      } label: {
+        HStack(alignment: .center, spacing: 9) {
+          Image(systemName: activityGroupIcon(group))
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(activityGroupTint(group))
+            .frame(width: 20)
+
+          Text(activityGroupTitle(group))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+
+          Spacer(minLength: 8)
+
+          Text(activityGroupStatus(group))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+
+          Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .padding(.horizontal, 14)
+      .padding(.vertical, 9)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color(.secondarySystemBackground))
+      .overlay {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .stroke(Color(.separator).opacity(0.28), lineWidth: 1)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+      if isExpanded {
+        VStack(alignment: .leading, spacing: 8) {
+          ForEach(group.entries) { entry in
+            messageRow(entry)
+          }
+        }
+      }
     }
   }
 
@@ -724,6 +830,7 @@ struct AppView: View {
     terminal = TerminalScreen()
     chatEntries.removeAll()
     expandedActivityEntryIds.removeAll()
+    expandedActivityGroupIds.removeAll()
     shouldAutoScroll = true
     persistTask?.cancel()
     persistTask = nil
@@ -1012,6 +1119,17 @@ struct AppView: View {
     return expandedActivityEntryIds.contains(entry.id)
   }
 
+  private func isCollapsedIntoActivityGroup(_ entry: ChatEntry) -> Bool {
+    switch entry.role {
+    case .tool, .command, .test, .plan, .diff, .permission, .artifact:
+      return entry.status != "running" && entry.status != "waiting"
+    case .assistant:
+      return isIntermediateAssistantMessage(entry.text)
+    case .user, .system:
+      return false
+    }
+  }
+
   private func toggleActivityExpansion(_ entry: ChatEntry) {
     if expandedActivityEntryIds.contains(entry.id) {
       expandedActivityEntryIds.remove(entry.id)
@@ -1020,12 +1138,110 @@ struct AppView: View {
     }
   }
 
+  private func toggleActivityGroupExpansion(_ group: ActivityGroup) {
+    if expandedActivityGroupIds.contains(group.id) {
+      expandedActivityGroupIds.remove(group.id)
+    } else {
+      expandedActivityGroupIds.insert(group.id)
+    }
+  }
+
+  private func activityGroupTitle(_ group: ActivityGroup) -> String {
+    "过程"
+  }
+
+  private func activityGroupStatus(_ group: ActivityGroup) -> String {
+    let activityEntries = group.entries.filter { $0.role != .assistant }
+    let stepCount = max(activityEntries.count, group.entries.count)
+    let failedCount = activityEntries.filter { $0.status == "failed" }.count
+    if failedCount > 0 {
+      return "\(stepCount) 步 · \(failedCount) 失败"
+    }
+    if activityEntries.contains(where: { $0.status == "changed" }) {
+      return "\(stepCount) 步 · 有变更"
+    }
+    return "已完成 \(stepCount) 步"
+  }
+
+  private func activityGroupIcon(_ group: ActivityGroup) -> String {
+    let activityEntries = group.entries.filter { $0.role != .assistant }
+    if activityEntries.contains(where: { $0.status == "failed" }) {
+      return "xmark.circle.fill"
+    }
+    if activityEntries.contains(where: { $0.status == "changed" }) {
+      return "doc.text.magnifyingglass"
+    }
+    return "checkmark.circle.fill"
+  }
+
+  private func activityGroupTint(_ group: ActivityGroup) -> Color {
+    let activityEntries = group.entries.filter { $0.role != .assistant }
+    if activityEntries.contains(where: { $0.status == "failed" }) {
+      return .red
+    }
+    if activityEntries.contains(where: { $0.status == "changed" }) {
+      return .purple
+    }
+    return .green
+  }
+
+  private func isIntermediateAssistantMessage(_ text: String) -> Bool {
+    let normalized = text
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+
+    guard normalized.count <= 260 else { return false }
+
+    let prefixes = [
+      "let me ",
+      "now let me ",
+      "i'll ",
+      "i will ",
+      "good --",
+      "good,",
+      "接下来",
+      "我先",
+      "我来",
+      "让我",
+    ]
+    guard prefixes.contains(where: { normalized.hasPrefix($0) }) else {
+      return false
+    }
+
+    let processWords = [
+      "explore",
+      "read",
+      "check",
+      "gather",
+      "inspect",
+      "analyze",
+      "look at",
+      "run",
+      "查看",
+      "读取",
+      "检查",
+      "分析",
+      "探索",
+    ]
+    return processWords.contains(where: { normalized.contains($0) })
+  }
+
   private func assistantBlocks(from text: String) -> [AssistantBlock] {
     var blocks: [AssistantBlock] = []
 
     for rawLine in text.components(separatedBy: .newlines) {
       let line = cleanAssistantDisplayLine(rawLine)
       guard !line.isEmpty else { continue }
+
+      if line == "意的点：" || line == "意的点:" {
+        if let last = blocks.indices.last, blocks[last].text.hasSuffix("几个值得") {
+          blocks[last].text.removeLast("几个值得".count)
+          blocks[last].text = blocks[last].text.trimmingCharacters(in: .whitespacesAndNewlines)
+          blocks.append(AssistantBlock(kind: .heading, text: "几个值得注意的点："))
+          continue
+        }
+      }
 
       if let bulletText = bulletText(from: line) {
         blocks.append(AssistantBlock(kind: .bullet, text: bulletText))
@@ -1171,6 +1387,7 @@ struct AppView: View {
     let removedIds = Set(chatEntries.prefix(removeCount).map(\.id))
     chatEntries.removeFirst(removeCount)
     expandedActivityEntryIds.subtract(removedIds)
+    expandedActivityGroupIds.subtract(removedIds)
   }
 
   private func schedulePersistChatEntries() {
