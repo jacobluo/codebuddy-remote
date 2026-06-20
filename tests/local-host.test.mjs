@@ -338,3 +338,43 @@ test("terminal input sends raw controls without recording a user message", async
     await host.close();
   }
 });
+
+test("terminal input rejects arbitrary text", async () => {
+  const adapter = {
+    listSessions() {
+      return [{ id: "terminal-cli", source: "cli-terminal", workspace: "mock", state: "interactive" }];
+    },
+    getState() {
+      return { sessionId: "terminal-cli", source: "cli-terminal", workspace: "mock", status: "interactive" };
+    },
+    onEvent() {},
+    async sendPrompt() {
+      return { conversationId: "terminal-cli", terminalOnly: true, assistantText: "", status: "interactive" };
+    },
+    async sendTerminalInput() {
+      throw new Error("sendTerminalInput should reject before reaching adapter");
+    },
+    async interrupt() {
+      return this.getState();
+    },
+    async resume() {
+      return this.getState();
+    },
+    async close() {},
+  };
+  const host = createLocalHost({ adapter, token: "test-token" });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const sent = await requestJson(`${baseUrl}/api/sessions/terminal-cli/input`, {
+      method: "POST",
+      body: JSON.stringify({ text: "rm -rf", label: "bad" }),
+    });
+    assert.equal(sent.response.status, 500);
+    assert.match(sent.body.error, /single approved control key/);
+  } finally {
+    await host.close();
+  }
+});

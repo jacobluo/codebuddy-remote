@@ -9,8 +9,8 @@ import { MockCliAdapter } from "../apps/local-host/src/mock-cli-adapter.mjs";
 import { createRelayServer } from "../apps/relay/src/relay.mjs";
 import { createCommand } from "../packages/protocol/src/index.mjs";
 
-async function withRelay(testFn) {
-  const relay = createRelayServer();
+async function withRelay(testFn, options = {}) {
+  const relay = createRelayServer(options);
   const server = await relay.listen(0);
   const { port } = server.address();
   try {
@@ -97,6 +97,96 @@ test("relay rejects non CodeBuddyRemote protocol payloads", async () => {
     } finally {
       host.close();
       phone.close();
+    }
+  });
+});
+
+test("relay requires the configured token on host, client, and forwarded frames", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const host = new WebSocket(relayUrl);
+    const phone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(host);
+      host.send(JSON.stringify({ type: "host.register", pairingCode: "TOKEN1" }));
+      const unauthorized = await readUntil(host, (frame) => frame.type === "error");
+      assert.match(unauthorized.error, /unauthorized relay token/);
+
+      host.send(JSON.stringify({
+        type: "host.register",
+        pairingCode: "TOKEN1",
+        token: "relay-secret",
+      }));
+      await readUntil(host, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(phone);
+      phone.send(JSON.stringify({
+        type: "client.join",
+        pairingCode: "TOKEN1",
+        token: "relay-secret",
+      }));
+      await readUntil(phone, (frame) => frame.type === "client.joined");
+
+      const command = createCommand({
+        sessionId: "local-host",
+        name: "listSessions",
+        payload: {},
+      });
+      phone.send(JSON.stringify({ type: "frame", payload: command }));
+      const frameError = await readUntil(phone, (frame) => frame.type === "error");
+      assert.match(frameError.error, /unauthorized relay token/);
+    } finally {
+      host.close();
+      phone.close();
+    }
+  }, { token: "relay-secret" });
+});
+
+test("relay expires pairing codes", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const host = new WebSocket(relayUrl);
+    const phone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(host);
+      host.send(JSON.stringify({ type: "host.register", pairingCode: "SHORT1" }));
+      await readUntil(host, (frame) => frame.type === "host.registered");
+      await sleep(40);
+
+      await waitForOpen(phone);
+      phone.send(JSON.stringify({ type: "client.join", pairingCode: "SHORT1" }));
+      const error = await readUntil(phone, (frame) => frame.type === "error");
+      assert.match(error.error, /pairing unavailable/);
+    } finally {
+      host.close();
+      phone.close();
+    }
+  }, { pairingTtlMs: 20 });
+});
+
+test("relay does not allow a pairing code to add multiple clients", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const host = new WebSocket(relayUrl);
+    const firstPhone = new WebSocket(relayUrl);
+    const secondPhone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(host);
+      host.send(JSON.stringify({ type: "host.register", pairingCode: "ONCE1" }));
+      await readUntil(host, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(firstPhone);
+      firstPhone.send(JSON.stringify({ type: "client.join", pairingCode: "ONCE1" }));
+      await readUntil(firstPhone, (frame) => frame.type === "client.joined");
+
+      await waitForOpen(secondPhone);
+      secondPhone.send(JSON.stringify({ type: "client.join", pairingCode: "ONCE1" }));
+      const error = await readUntil(secondPhone, (frame) => frame.type === "error");
+      assert.match(error.error, /pairing unavailable/);
+    } finally {
+      host.close();
+      firstPhone.close();
+      secondPhone.close();
     }
   });
 });

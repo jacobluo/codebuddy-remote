@@ -12,13 +12,26 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
-export function createRelayServer({ token } = {}) {
+const DEFAULT_PAIRING_TTL_MS = 120000;
+const DEFAULT_MAX_FRAME_BYTES = 128 * 1024;
+const DEFAULT_JOIN_FAILURE_LIMIT = 8;
+const DEFAULT_JOIN_FAILURE_WINDOW_MS = 60000;
+
+export function createRelayServer({
+  token = "",
+  pairingTtlMs = DEFAULT_PAIRING_TTL_MS,
+  maxFrameBytes = DEFAULT_MAX_FRAME_BYTES,
+  joinFailureLimit = DEFAULT_JOIN_FAILURE_LIMIT,
+  joinFailureWindowMs = DEFAULT_JOIN_FAILURE_WINDOW_MS,
+} = {}) {
   const hostsByPairingCode = new Map();
   const clientsBySocket = new Map();
+  const joinFailuresByPeer = new Map();
   const stats = {
     framesFromHosts: 0,
     framesFromClients: 0,
     commandsFromClients: 0,
+    rejectedJoins: 0,
   };
   const server = http.createServer(handleHttp);
   const wss = new WebSocketServer({ noServer: true });
@@ -38,6 +51,9 @@ export function createRelayServer({ token } = {}) {
   wss.on("connection", (ws) => {
     ws.on("message", (data) => {
       try {
+        if (frameSize(data) > maxFrameBytes) {
+          throw new Error("relay frame is too large");
+        }
         handleFrame(ws, parseJson(data));
       } catch (error) {
         send(ws, {
@@ -72,7 +88,7 @@ export function createRelayServer({ token } = {}) {
       return;
     }
 
-    if (token && frame.token !== token) {
+    if (token && !isAuthorizedToken(frame.token, token)) {
       throw new Error("unauthorized relay token");
     }
 
@@ -98,6 +114,7 @@ export function createRelayServer({ token } = {}) {
     const pairingCode = normalizePairingCode(frame.pairingCode || createPairingCode());
     const previous = hostsByPairingCode.get(pairingCode);
     const clients = previous?.clients ?? new Set();
+    const now = Date.now();
 
     const host = {
       ws,
@@ -105,6 +122,8 @@ export function createRelayServer({ token } = {}) {
       pairingCode,
       meta: frame.meta || {},
       clients,
+      paired: Boolean(previous?.paired),
+      expiresAt: previous?.paired ? previous.expiresAt : now + pairingTtlMs,
     };
     hostsByPairingCode.set(pairingCode, host);
     for (const clientWs of clients) {
@@ -117,6 +136,7 @@ export function createRelayServer({ token } = {}) {
       type: "host.registered",
       hostId: host.hostId,
       pairingCode,
+      expiresAt: host.expiresAt,
       meta: host.meta,
     });
     if (previous && previous.ws !== ws) {
@@ -125,10 +145,16 @@ export function createRelayServer({ token } = {}) {
   }
 
   function joinClient(ws, frame) {
+    assertJoinAllowed(ws);
     const pairingCode = normalizePairingCode(frame.pairingCode);
     const host = hostsByPairingCode.get(pairingCode);
-    if (!host || host.ws.readyState !== host.ws.OPEN) {
-      throw new Error("host is offline or pairing code is invalid");
+    if (!host || host.ws.readyState !== host.ws.OPEN || Date.now() > host.expiresAt) {
+      recordJoinFailure(ws);
+      throw new Error("pairing unavailable");
+    }
+    if (host.paired && host.clients.size > 0) {
+      recordJoinFailure(ws);
+      throw new Error("pairing unavailable");
     }
 
     const client = {
@@ -139,6 +165,7 @@ export function createRelayServer({ token } = {}) {
     };
     clientsBySocket.set(ws, client);
     host.clients.add(ws);
+    host.paired = true;
     ws.role = "client";
     ws.pairingCode = pairingCode;
     send(ws, {
@@ -146,6 +173,7 @@ export function createRelayServer({ token } = {}) {
       clientId: client.clientId,
       hostId: host.hostId,
       pairingCode,
+      pairingExpiresAt: host.expiresAt,
       meta: host.meta,
     });
     send(host.ws, {
@@ -210,6 +238,30 @@ export function createRelayServer({ token } = {}) {
     }
   }
 
+  function assertJoinAllowed(ws) {
+    const peer = getPeerKey(ws);
+    const item = joinFailuresByPeer.get(peer);
+    if (!item || Date.now() > item.resetAt) return;
+    if (item.count >= joinFailureLimit) {
+      throw new Error("too many pairing attempts");
+    }
+  }
+
+  function recordJoinFailure(ws) {
+    stats.rejectedJoins += 1;
+    const peer = getPeerKey(ws);
+    const now = Date.now();
+    const item = joinFailuresByPeer.get(peer);
+    if (!item || now > item.resetAt) {
+      joinFailuresByPeer.set(peer, {
+        count: 1,
+        resetAt: now + joinFailureWindowMs,
+      });
+      return;
+    }
+    item.count += 1;
+  }
+
   return {
     listen(port = 17330, host = "127.0.0.1") {
       return new Promise((resolve) => {
@@ -252,6 +304,12 @@ function parseJson(data) {
   return JSON.parse(Buffer.isBuffer(data) ? data.toString("utf8") : String(data));
 }
 
+function frameSize(data) {
+  if (Buffer.isBuffer(data)) return data.length;
+  if (typeof data === "string") return Buffer.byteLength(data, "utf8");
+  return Buffer.byteLength(String(data), "utf8");
+}
+
 function send(ws, frame) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
 }
@@ -283,4 +341,15 @@ function assertObject(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
+}
+
+function isAuthorizedToken(provided, expected) {
+  if (typeof provided !== "string" || !provided) return false;
+  const providedDigest = crypto.createHash("sha256").update(provided).digest();
+  const expectedDigest = crypto.createHash("sha256").update(expected).digest();
+  return crypto.timingSafeEqual(providedDigest, expectedDigest);
+}
+
+function getPeerKey(ws) {
+  return ws._socket?.remoteAddress || "unknown";
 }

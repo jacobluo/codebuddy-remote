@@ -84,6 +84,20 @@ Token 填启动时打印的 `Local Token`。
 
 `codebuddy-remote` 会由 Local Host 通过伪终端启动并复用一个长期驻留的 `codebuddy` 进程。这个 CodeBuddy 进程显示在当前终端里，所以本地仍能看到 CLI 界面输出并继续键盘交互；iOS App 会把 prompt 写入同一个终端 session。当前工作目录就是 CodeBuddy workspace。
 
+Local Host 会把语义事件追加写入本机 JSONL 历史文件，`codebuddy-remote` 重启后 iOS App 仍可回放历史消息。默认路径按 workspace 生成：
+
+```text
+~/.codebuddy-remote/history/<workspace>-<sha256(cwd).前16位>.jsonl
+```
+
+例如在 `/Users/robiluo/aicoding/drink` 下启动，文件名会类似 `drink-<hash>.jsonl`。如果两个目录都叫 `drink`，完整路径 hash 会让它们落到不同文件。需要显式指定历史文件时：
+
+```sh
+CODEBUDDY_REMOTE_HISTORY_FILE=/path/to/events.jsonl codebuddy-remote
+```
+
+历史文件只保存 normalized semantic events，不保存原始 `terminal.output` 刷新帧，避免 TUI 输出把历史撑爆。
+
 如需换端口：
 
 ```sh
@@ -130,35 +144,47 @@ Relay 是应用层中转服务，适合手机和 Mac 不在同一个局域网时
 iOS App <-> codebuddy-relay <-> Mac codebuddy-remote <-> 本地 codebuddy CLI
 ```
 
-启动一个 Relay：
+公网部署时 Relay 必须启用 token。先生成一个强随机 token：
 
 ```sh
+openssl rand -base64 32
+```
+
+在公网服务器上启动 Relay。推荐让 Node 只监听本机，再由 Caddy / Nginx / Cloudflare Tunnel 暴露 `wss://`：
+
+```sh
+CODEBUDDY_RELAY_HOST=127.0.0.1 \
+CODEBUDDY_RELAY_PORT=17330 \
+CODEBUDDY_RELAY_TOKEN=<relay-token> \
 npm run start:relay
 ```
 
-默认监听：
+本地调试可以直接监听：
 
 ```text
-ws://0.0.0.0:17330/relay
+ws://127.0.0.1:17330/relay
 ```
 
-如果需要 Relay token：
+如果要直接监听公网地址，`CODEBUDDY_RELAY_TOKEN` 不能为空；否则服务会拒绝启动。只在临时本机测试时才使用：
 
 ```sh
-CODEBUDDY_RELAY_TOKEN=<relay-token> npm run start:relay
+CODEBUDDY_RELAY_ALLOW_INSECURE=1 npm run start:relay
 ```
+
+不要在公网使用 `CODEBUDDY_RELAY_ALLOW_INSECURE=1`。
 
 Mac 端连接 Relay：
 
 ```sh
 cd /Users/robiluo/aicoding/drink
-CODEBUDDY_REMOTE_RELAY_URL=ws://<relay-host>:17330/relay \
-CODEBUDDY_REMOTE_PAIRING_CODE=123456 \
+CODEBUDDY_REMOTE_RELAY_URL=wss://<relay-domain>/relay \
 CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
 codebuddy-remote
 ```
 
-iOS App 里切到 `Relay` 模式，填写 Relay 地址、配对码和可选 Relay token。Relay 只接受 `command`、`event`、`response` 三类应用层 payload，不暴露本地 HTTP 端口，也不提供任意 TCP 转发。
+启动后 Mac 终端会打印 `Pairing`。配对码默认有效 120 秒，并且已配对后不再允许第二台手机复用同一个配对码。iOS App 里切到 `Relay` 模式，填写 Relay 地址、配对码和 Relay token。
+
+Relay 只接受 `command`、`event`、`response` 三类应用层 payload，不暴露本地 HTTP 端口，也不提供任意 TCP 转发。手机端的终端输入也被限制为单个审批控制键，例如 `1` / `2` / `3`，不能通过该接口发送任意 shell 文本。
 
 ## iOS App
 
@@ -181,7 +207,7 @@ xcodebuild -project apps/ios/CodeBuddyRemote/CodeBuddyRemote.xcodeproj \
   build
 ```
 
-当前本机没有可用 iOS Simulator runtime，所以 scheme 运行和 UI 启动验证需要先在 Xcode > Settings > Components 安装 iOS runtime。
+可以使用 XcodeBuildMCP / Xcode 命令行在已安装的 iOS Simulator runtime 上执行 `CodeBuddyRemoteTests`，覆盖 Markdown 解析和消息分组逻辑。
 
 ## 下一步
 

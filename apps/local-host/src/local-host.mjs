@@ -18,6 +18,9 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
+const MAX_JSON_BODY_BYTES = 64 * 1024;
+const TERMINAL_CONTROL_PATTERN = /^[0-9ynqYN]$/;
+
 export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFile = "" }) {
   let server;
   const historyStore = createHistoryStore(historyFile);
@@ -234,6 +237,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFil
     if (command.name === "sendTerminalInput") {
       const text = String(command.payload.text || "");
       if (!text) throw new Error("text is required");
+      validateTerminalControlInput(text);
       if (typeof adapter.sendTerminalInput !== "function") {
         throw new Error("adapter does not support terminal input");
       }
@@ -339,7 +343,14 @@ function sendJson(res, status, body) {
 
 async function readJson(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > MAX_JSON_BODY_BYTES) {
+      throw new Error("request body is too large");
+    }
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
@@ -350,6 +361,11 @@ function writeSse(res, event) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function validateTerminalControlInput(text) {
+  if (!TERMINAL_CONTROL_PATTERN.test(text)) {
+    throw new Error("terminal input must be a single approved control key");
+  }
+}
 
 function createHistoryStore(historyFile) {
   if (!historyFile) {
