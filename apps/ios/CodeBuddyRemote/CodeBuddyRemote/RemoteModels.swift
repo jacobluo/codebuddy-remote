@@ -19,6 +19,36 @@ struct RemoteConfig: Equatable {
   }
 }
 
+struct RelayConfig: Equatable {
+  var relayURL: String
+  var pairingCode: String
+  var token: String
+
+  static let defaultValue = RelayConfig(
+    relayURL: "ws://127.0.0.1:17330/relay",
+    pairingCode: "",
+    token: ""
+  )
+
+  var normalizedRelayURL: URL? {
+    let trimmed = relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    let withScheme: String
+    if trimmed.hasPrefix("ws://") || trimmed.hasPrefix("wss://") {
+      withScheme = trimmed
+    } else if trimmed.hasPrefix("http://") {
+      withScheme = "ws://" + trimmed.dropFirst("http://".count)
+    } else if trimmed.hasPrefix("https://") {
+      withScheme = "wss://" + trimmed.dropFirst("https://".count)
+    } else {
+      withScheme = "wss://\(trimmed)"
+    }
+
+    return URL(string: String(withScheme))
+  }
+}
+
 struct RemoteSession: Codable, Identifiable, Equatable {
   let id: String
   let source: String
@@ -52,6 +82,7 @@ struct RemoteCommand: Codable {
   let id: String
   let sessionId: String
   let name: String
+  let payload: EventPayload?
 }
 
 struct StateEnvelope: Codable {

@@ -5,6 +5,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { createLocalHost } from "./local-host.mjs";
+import { connectRelay } from "./relay-client.mjs";
 import { TerminalCliAdapter } from "./terminal-cli-adapter.mjs";
 
 export function createRunConfig({ cwd = process.cwd(), env = process.env } = {}) {
@@ -14,6 +15,9 @@ export function createRunConfig({ cwd = process.cwd(), env = process.env } = {})
     host: env.CODEBUDDY_REMOTE_HOST || "0.0.0.0",
     port: Number(env.CODEBUDDY_REMOTE_PORT || 17320),
     token: env.CODEBUDDY_REMOTE_TOKEN || createToken(),
+    relayUrl: env.CODEBUDDY_REMOTE_RELAY_URL || "",
+    relayToken: env.CODEBUDDY_REMOTE_RELAY_TOKEN || "",
+    pairingCode: env.CODEBUDDY_REMOTE_PAIRING_CODE || createPairingCode(),
   };
 }
 
@@ -62,6 +66,16 @@ export async function main() {
     token: config.token,
     host: config.host,
   });
+  const relay = connectRelay({
+    relayUrl: config.relayUrl,
+    relayToken: config.relayToken,
+    pairingCode: config.pairingCode,
+    host,
+    meta: {
+      workspace: config.cwd,
+      source: "codebuddy-remote",
+    },
+  });
 
   const server = await host.listen(config.port);
   const address = server.address();
@@ -78,6 +92,10 @@ export async function main() {
   console.log(`  Workspace   ${config.cwd}`);
   console.log(`  Local Host  http://${config.host}:${actualPort}`);
   console.log(`  CodeBuddy   ${config.cliPath}`);
+  if (config.relayUrl) {
+    console.log(`  Relay       ${config.relayUrl}`);
+    console.log(`  Pairing     ${config.pairingCode}`);
+  }
   console.log("");
   console.log("  Open on phone:");
   for (const url of urls) console.log(`  ${url}`);
@@ -92,6 +110,7 @@ export async function main() {
     console.log(`[codebuddy-remote] received ${signal}, shutting down`);
     try {
       await host.close();
+      relay?.close();
       process.exit(0);
     } catch (error) {
       console.error("[codebuddy-remote] shutdown failed", error);
@@ -112,6 +131,10 @@ export async function main() {
 
 function createToken() {
   return crypto.randomBytes(24).toString("base64url");
+}
+
+function createPairingCode() {
+  return crypto.randomBytes(4).toString("base64url").toUpperCase();
 }
 
 function safeRealpath(candidate, resolveRealpath) {

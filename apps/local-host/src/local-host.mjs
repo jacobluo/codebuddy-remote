@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createCommand, createEvent } from "../../../packages/protocol/src/index.mjs";
+import {
+  createCommand,
+  createEvent,
+  validateCommand,
+} from "../../../packages/protocol/src/index.mjs";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.resolve(MODULE_DIR, "..", "..", "mobile-web", "public");
@@ -56,13 +60,21 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
       }
 
       if (req.method === "GET" && url.pathname === "/api/sessions") {
-        sendJson(res, 200, { sessions: adapter.listSessions() });
+        sendJson(res, 200, await executeCommand(createCommand({
+          sessionId: "local-host",
+          name: "listSessions",
+          payload: {},
+        })));
         return;
       }
 
       const stateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/state$/);
       if (req.method === "GET" && stateMatch) {
-        sendJson(res, 200, { state: adapter.getState(stateMatch[1]) });
+        sendJson(res, 200, await executeCommand(createCommand({
+          sessionId: stateMatch[1],
+          name: "getState",
+          payload: {},
+        })));
         return;
       }
 
@@ -81,41 +93,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
           name: "sendPrompt",
           payload: { text, mode: body.mode || "craft" },
         });
-
-        pushEvent({
-          sessionId,
-          name: "user.message",
-          payload: { text },
-        });
-        pushEvent({
-          sessionId,
-          name: "session.state",
-          payload: { status: "running" },
-        });
-
-        const result = await adapter.sendPrompt(sessionId, text);
-        if (!result.terminalOnly) {
-          pushEvent({
-            sessionId,
-            conversationId: result.conversationId,
-            name: "assistant.delta",
-            payload: { text: result.assistantText },
-          });
-          pushEvent({
-            sessionId,
-            conversationId: result.conversationId,
-            name: "assistant.completed",
-            payload: {},
-          });
-        }
-        pushEvent({
-          sessionId,
-          conversationId: result.conversationId,
-          name: "session.state",
-          payload: { status: result.status || "idle" },
-        });
-
-        sendJson(res, 202, { command });
+        sendJson(res, 202, await executeCommand(command));
         return;
       }
 
@@ -129,18 +107,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
           name: action,
           payload: {},
         });
-        const state =
-          action === "interrupt"
-            ? await adapter.interrupt(sessionId)
-            : await adapter.resume(sessionId);
-
-        pushEvent({
-          sessionId,
-          name: "session.state",
-          payload: { status: state.status },
-        });
-
-        sendJson(res, 202, { command, state });
+        sendJson(res, 202, await executeCommand(command));
         return;
       }
 
@@ -184,6 +151,75 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
     res.on("close", () => subscribers.delete(subscriber));
   }
 
+  async function executeCommand(command) {
+    validateCommand(command);
+
+    if (command.name === "listSessions") {
+      return { sessions: adapter.listSessions() };
+    }
+
+    if (command.name === "getState") {
+      return { state: adapter.getState(command.sessionId) };
+    }
+
+    if (command.name === "sendPrompt") {
+      const text = String(command.payload.text || "").trim();
+      if (!text) throw new Error("text is required");
+
+      pushEvent({
+        sessionId: command.sessionId,
+        name: "user.message",
+        payload: { text },
+      });
+      pushEvent({
+        sessionId: command.sessionId,
+        name: "session.state",
+        payload: { status: "running" },
+      });
+
+      const result = await adapter.sendPrompt(command.sessionId, text);
+      if (!result.terminalOnly) {
+        pushEvent({
+          sessionId: command.sessionId,
+          conversationId: result.conversationId,
+          name: "assistant.delta",
+          payload: { text: result.assistantText },
+        });
+        pushEvent({
+          sessionId: command.sessionId,
+          conversationId: result.conversationId,
+          name: "assistant.completed",
+          payload: {},
+        });
+      }
+      pushEvent({
+        sessionId: command.sessionId,
+        conversationId: result.conversationId,
+        name: "session.state",
+        payload: { status: result.status || "idle" },
+      });
+
+      return { command };
+    }
+
+    if (command.name === "interrupt" || command.name === "resume") {
+      const state =
+        command.name === "interrupt"
+          ? await adapter.interrupt(command.sessionId)
+          : await adapter.resume(command.sessionId);
+
+      pushEvent({
+        sessionId: command.sessionId,
+        name: "session.state",
+        payload: { status: state.status },
+      });
+
+      return { command, state };
+    }
+
+    throw new Error(`unsupported command: ${command.name}`);
+  }
+
   return {
     listen(port = 17320) {
       server = http.createServer(handle);
@@ -207,6 +243,14 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
       });
     },
     pushEvent,
+    handleCommand: executeCommand,
+    getEvents({ after = 0 } = {}) {
+      return events.filter((event) => event.seq > after);
+    },
+    subscribe(subscriber) {
+      subscribers.add(subscriber);
+      return () => subscribers.delete(subscriber);
+    },
   };
 }
 

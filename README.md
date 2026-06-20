@@ -34,6 +34,7 @@ Local Host / Relay = 安全连接与事件转发层
 ## 目录
 
 - `apps/local-host/`：本地控制面服务，支持 mock adapter 和真实 CodeBuddy CLI adapter。
+- `apps/relay/`：应用层 WebSocket Relay，只转发 CodeBuddyRemote command/event，不做通用端口穿透。
 - `apps/mobile-web/`：手机 Web 控制台静态页面。
 - `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端，连接本机 `codebuddy-remote`。
 - `packages/protocol/`：统一 command/event 协议工具。
@@ -120,6 +121,44 @@ CODEBUDDY_REMOTE_ADAPTER=real CODEBUDDY_REMOTE_PORT=17321 npm run start:local-ho
 
 `codebuddy-remote` 已验证支持长期驻留多轮对话：多轮 prompt 复用同一个 ACP session 和同一个 `conversationId`。
 
+## Relay 模式
+
+Relay 是应用层中转服务，适合手机和 Mac 不在同一个局域网时使用：
+
+```text
+iOS App <-> codebuddy-relay <-> Mac codebuddy-remote <-> 本地 codebuddy CLI
+```
+
+启动一个 Relay：
+
+```sh
+npm run start:relay
+```
+
+默认监听：
+
+```text
+ws://0.0.0.0:17330/relay
+```
+
+如果需要 Relay token：
+
+```sh
+CODEBUDDY_RELAY_TOKEN=<relay-token> npm run start:relay
+```
+
+Mac 端连接 Relay：
+
+```sh
+cd /Users/robiluo/aicoding/drink
+CODEBUDDY_REMOTE_RELAY_URL=ws://<relay-host>:17330/relay \
+CODEBUDDY_REMOTE_PAIRING_CODE=123456 \
+CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
+codebuddy-remote
+```
+
+iOS App 里切到 `Relay` 模式，填写 Relay 地址、配对码和可选 Relay token。Relay 只接受 `command`、`event`、`response` 三类应用层 payload，不暴露本地 HTTP 端口，也不提供任意 TCP 转发。
+
 ## iOS App
 
 原生 iOS 客户端位于：
@@ -128,7 +167,7 @@ CODEBUDDY_REMOTE_ADAPTER=real CODEBUDDY_REMOTE_PORT=17321 npm run start:local-ho
 apps/ios/CodeBuddyRemote/CodeBuddyRemote.xcodeproj
 ```
 
-打开工程后运行 `CodeBuddyRemote` target，在 App 内输入 Mac 端启动 `codebuddy-remote` 后打印的局域网 URL 和 token。App 会订阅本地事件流、显示终端输出，并把手机输入发送到同一个长期驻留的 CodeBuddy CLI session。
+打开工程后运行 `CodeBuddyRemote` target。局域网模式下，在 App 内输入 Mac 端启动 `codebuddy-remote` 后打印的局域网 URL 和 token；Relay 模式下，输入 Relay URL 和配对码。App 会订阅事件流、显示终端输出，并把手机输入发送到同一个长期驻留的 CodeBuddy CLI session。
 
 本仓库的命令行编译验证：
 
