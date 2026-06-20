@@ -16,6 +16,7 @@ const DEFAULT_PAIRING_TTL_MS = 120000;
 const DEFAULT_MAX_FRAME_BYTES = 128 * 1024;
 const DEFAULT_JOIN_FAILURE_LIMIT = 8;
 const DEFAULT_JOIN_FAILURE_WINDOW_MS = 60000;
+const MAX_DEVICE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export function createRelayServer({
   token = "",
@@ -117,6 +118,8 @@ export function createRelayServer({
     }
     const previous = hostsByPairingCode.get(pairingCode);
     const clients = previous?.clients ?? new Set();
+    const devices = previous?.devices ?? new Map();
+    const usedDeviceNonces = previous?.usedDeviceNonces ?? new Map();
     const now = Date.now();
 
     const host = {
@@ -124,6 +127,8 @@ export function createRelayServer({
       hostId: frame.hostId || `host_${crypto.randomUUID()}`,
       pairingCode,
       pairingSecretHash: pairingSecret ? hashPairingSecret(pairingSecret) : "",
+      devices,
+      usedDeviceNonces,
       meta: frame.meta || {},
       clients,
       paired: Boolean(previous?.paired),
@@ -152,17 +157,32 @@ export function createRelayServer({
     assertJoinAllowed(ws);
     const pairingCode = normalizePairingCode(frame.pairingCode);
     const host = hostsByPairingCode.get(pairingCode);
-    if (!host || host.ws.readyState !== host.ws.OPEN || Date.now() > host.expiresAt) {
+    if (!host || host.ws.readyState !== host.ws.OPEN) {
       recordJoinFailure(ws);
       throw new Error("pairing unavailable");
     }
-    if (host.pairingSecretHash && !isAuthorizedPairingSecret(frame.pairingSecret, host.pairingSecretHash)) {
+
+    const pairingAuthorized =
+      Date.now() <= host.expiresAt &&
+      (!host.pairingSecretHash ||
+        isAuthorizedPairingSecret(frame.pairingSecret, host.pairingSecretHash));
+    const deviceAuthorized = verifyRelayDeviceJoin(host, frame);
+
+    if (!pairingAuthorized && !deviceAuthorized) {
       recordJoinFailure(ws);
       throw new Error("pairing unavailable");
     }
     if (host.paired && host.clients.size > 0) {
       recordJoinFailure(ws);
       throw new Error("pairing unavailable");
+    }
+
+    if (pairingAuthorized && frame.deviceId && frame.deviceSecret) {
+      registerRelayDevice(host, {
+        deviceId: frame.deviceId,
+        deviceSecret: frame.deviceSecret,
+        deviceName: frame.deviceName,
+      });
     }
 
     const client = {
@@ -375,6 +395,68 @@ function isAuthorizedPairingSecret(provided, expectedHash) {
   const secret = normalizeOptionalPairingSecret(provided);
   if (!secret) return false;
   return isAuthorizedToken(hashPairingSecret(secret), expectedHash);
+}
+
+function registerRelayDevice(host, { deviceId, deviceSecret, deviceName }) {
+  const id = String(deviceId || "").trim();
+  const secret = String(deviceSecret || "").trim();
+  if (!id || !secret) return;
+  host.devices.set(id, {
+    deviceId: id,
+    deviceSecret: secret,
+    deviceName: String(deviceName || "CodeBuddy Remote"),
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function verifyRelayDeviceJoin(host, frame) {
+  const deviceId = String(frame.deviceId || "").trim();
+  const timestamp = String(frame.timestamp || "").trim();
+  const nonce = String(frame.nonce || "").trim();
+  const signature = String(frame.signature || "").trim();
+  if (!deviceId || !timestamp || !nonce || !signature) return false;
+
+  const device = host.devices.get(deviceId);
+  if (!device) return false;
+
+  const requestTime = Number(timestamp);
+  if (!Number.isFinite(requestTime)) return false;
+  if (Math.abs(Date.now() - requestTime) > MAX_DEVICE_CLOCK_SKEW_MS) return false;
+
+  pruneRelayDeviceNonces(host.usedDeviceNonces);
+  const nonceKey = `${deviceId}:${nonce}`;
+  if (host.usedDeviceNonces.has(nonceKey)) return false;
+
+  const expected = signRelayDeviceRequest({
+    secret: device.deviceSecret,
+    pairingCode: host.pairingCode,
+    timestamp,
+    nonce,
+  });
+  if (!timingSafeStringEqual(signature, expected)) return false;
+  host.usedDeviceNonces.set(nonceKey, Date.now() + MAX_DEVICE_CLOCK_SKEW_MS);
+  return true;
+}
+
+function signRelayDeviceRequest({ secret, pairingCode, timestamp, nonce }) {
+  return crypto
+    .createHmac("sha256", secret)
+    .update(["relay.join", pairingCode, timestamp, nonce].join("\n"))
+    .digest("base64url");
+}
+
+function pruneRelayDeviceNonces(usedDeviceNonces) {
+  const now = Date.now();
+  for (const [key, expiresAt] of usedDeviceNonces) {
+    if (expiresAt <= now) usedDeviceNonces.delete(key);
+  }
+}
+
+function timingSafeStringEqual(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual));
+  const expectedBuffer = Buffer.from(String(expected));
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 function getPeerKey(ws) {

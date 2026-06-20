@@ -209,7 +209,9 @@ iOS App 扫码后：
 - 使用 `relayURL + pairingCode + pairingSecret` 加入对应 host。
 - Relay 配对码默认短期有效，已加入后不能被第二个 client 复用。
 
-当前 Relay 模式把 server token 限定在 Mac host 通道；iOS client 使用短期 pairing secret 加入会话，业务 `frame` 不再携带 relay token。设备级 HMAC 绑定已经在 Local 模式落地，Relay 侧的长期设备级认证可以作为下一阶段补齐。
+当前 Relay 模式把 server token 限定在 Mac host 通道；iOS client 使用短期 pairing secret 首次加入会话，业务 `frame` 不再携带 relay token。
+
+首次或带有效 pairing secret 的 Relay join 会提交本机 `deviceId + deviceSecret`，Relay 在 pairing secret 校验通过后登记该设备。设备登记后，同一设备可在 pairing code 过期后用 `relay.join` HMAC 签名重新加入，不再依赖短期 pairing secret。Relay 对设备 join nonce 做窗口内防重放。
 
 ## API 权限边界
 
@@ -225,7 +227,9 @@ iOS App 扫码后：
 - `GET /api/events/stream`
 - `POST /api/devices/bind`
 - `GET /api/devices`
+- `PATCH /api/devices/:id`
 - `POST /api/devices/:id/revoke`
+- `GET /api/audit`
 
 手机端禁止能力：
 
@@ -273,12 +277,14 @@ iOS App 扫码后：
 - Relay pairing code / pairing secret 短期有效，且不能被多个 client 复用。
 - 公网 Relay 要求 token，除非显式设置本机调试开关。
 - Relay token 只用于 Mac host 注册，不进入 iOS 二维码和业务 frame。
+- Relay 支持登记后的设备用 HMAC 重新加入，并对 join nonce 做防重放。
 - Relay payload 做类型白名单校验。
 - Local 绑定后支持设备级 HMAC 请求签名。
 - Local 设备签名带 nonce replay cache，同一窗口内重复 nonce 会被拒绝。
 - Local Pairing URL 使用一次性 bind token，绑定成功后立即失效。
-- Mac 端支持设备列表和撤销 API。
-- Mac 端写入安全审计 JSONL，记录绑定、prompt 摘要、审批输入、中断/恢复和事件流连接。
+- Mac 端支持设备列表、重命名和撤销 API。
+- Mac 端写入安全审计 JSONL，记录绑定、prompt 摘要、审批输入、中断/恢复和事件流连接，并提供 `GET /api/audit` 导出。
+- Local 管理 API 要求本机来源，带非本机 `X-Forwarded-For` 会被拒绝。
 - 设备密钥保存在 iOS Keychain。
 - 设备列表保存在 Mac 本地。
 - iOS 连接设置显示当前 mode、host、workspace 和绑定状态。
@@ -287,18 +293,31 @@ iOS App 扫码后：
 
 ## 已知缺口
 
-- Relay 模式还没有使用长期设备级 HMAC 或端到端加密。
 - Local Host 当前是 HTTP，局域网内依赖 HMAC 请求签名保护认证完整性，未提供传输层加密。
-- 安全审计日志已有独立文件，但还没有可视化查看入口。
+- Relay 设备认证已补齐，但尚未做端到端加密；Relay 仍可看到转发 payload。
+- 安全审计日志已有独立文件和导出 API，但还没有独立可视化页面。
 - Local Pairing URL 中携带一次性 bind token；Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
 
 ## 下一步安全任务
 
-1. 为 Relay 模式补长期设备级认证，避免只依赖短期 pairing secret。
+1. 评估并选择端到端加密方案，让 Relay 只见密文。
 2. 评估 Local 模式 mTLS、Noise、WebSocket over TLS 或局域网 HTTPS 的成本。
-3. 为审计日志增加查看入口或导出工具。
-4. 增加设备重命名 API。
-5. 对 Local 管理 API 增加更细粒度的本机访问限制。
+3. 为审计日志增加独立可视化页面。
+
+## Local 传输加密评估
+
+当前 Local 模式先采用 HTTP + 设备 HMAC 签名：
+
+- 优点：实现简单，扫码后不需要安装证书；请求身份、完整性和防重放已经覆盖。
+- 不足：局域网内被动监听者仍可能看到 prompt、事件和状态内容。
+
+短期建议保持 HTTP + HMAC，并提示用户只在可信局域网使用。产品化前再选择以下方案之一：
+
+- `HTTPS + 自签 CA`：浏览器生态成熟，但 iOS 信任链和证书安装流程重。
+- `mTLS`：身份强，但移动端证书生命周期和撤销管理复杂。
+- `Noise / libsodium`：适合应用层 E2E，协议更可控，但需要自己维护握手、密钥轮换和调试工具。
+
+Relay 模式优先考虑应用层 E2E，因为 Relay 不能持有解密能力；Local 模式可继续用 HMAC 做身份/完整性，并在真实分发前决定是否上 TLS。
 
 ## 验收清单
 
@@ -309,7 +328,11 @@ iOS App 扫码后：
 - 同一个 signed nonce 不能重复使用。
 - `GET /api/devices` 不返回 `deviceSecret`。
 - `POST /api/devices/:id/revoke` 后设备签名立即失效。
+- `PATCH /api/devices/:id` 可重命名设备。
+- `GET /api/audit` 可导出审计记录。
+- 非本机来源不能使用 Local 管理 token 调管理 API。
 - Relay 未配置 token 时不能公网启动。
 - 同一个 Relay pairing code 不能被两个 client 复用。
+- Relay 设备登记后可用 HMAC 重新加入，且同一 join nonce 不能重放。
 - iOS 重启后仍能从 Keychain 读取设备凭证。
 - Mac 删除 `devices.json` 后，iOS 需要重新扫码绑定。

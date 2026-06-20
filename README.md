@@ -164,7 +164,9 @@ CODEBUDDY_REMOTE_ADAPTER=real CODEBUDDY_REMOTE_PORT=17321 npm run start:local-ho
 - `GET /api/events/stream`
 - `POST /api/devices/bind`
 - `GET /api/devices`
+- `PATCH /api/devices/:id`
 - `POST /api/devices/:id/revoke`
+- `GET /api/audit`
 
 `codebuddy-remote` 已验证支持长期驻留多轮对话：多轮 prompt 复用同一个 ACP session 和同一个 `conversationId`。
 
@@ -214,7 +216,7 @@ CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
 codebuddy-remote
 ```
 
-`CODEBUDDY_REMOTE_RELAY_TOKEN` 只用于 Mac host 向 Relay 注册，不会写入二维码。启动后 Mac 终端会打印 `Pairing` 和二维码；二维码里包含 Relay 地址、短期配对码和短期配对密钥。配对密钥默认随机生成；需要固定时可设置 `CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET`。配对码默认有效 120 秒，并且已配对后不再允许第二台手机复用同一个配对码。iOS App 里切到 `Relay` 模式时，手动填写 Relay 地址、配对码和配对密钥即可。
+`CODEBUDDY_REMOTE_RELAY_TOKEN` 只用于 Mac host 向 Relay 注册，不会写入二维码。启动后 Mac 终端会打印 `Pairing` 和二维码；二维码里包含 Relay 地址、短期配对码和短期配对密钥。配对密钥默认随机生成；需要固定时可设置 `CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET`。配对码默认有效 120 秒，并且已配对后不再允许第二台手机复用同一个配对码。iOS App 首次加入 Relay 时会登记本机设备，后续同一设备可以用设备级 HMAC 重连。手动连接时，在 iOS App 里切到 `Relay` 模式并填写 Relay 地址、配对码和配对密钥即可。
 
 如果使用扫码绑定，App 会自动填入 Relay URL、配对码和配对密钥，并连接到对应 Mac host。
 

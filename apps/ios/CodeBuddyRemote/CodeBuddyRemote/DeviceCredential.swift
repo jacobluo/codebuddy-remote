@@ -24,6 +24,13 @@ struct DeviceCredential: Codable, Equatable {
     let mac = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
     return Data(mac).base64URLEncodedString()
   }
+
+  func relayJoinSignature(pairingCode: String, timestamp: String, nonce: String) -> String {
+    let message = ["relay.join", pairingCode, timestamp, nonce].joined(separator: "\n")
+    let key = SymmetricKey(data: Data(deviceSecret.utf8))
+    let mac = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
+    return Data(mac).base64URLEncodedString()
+  }
 }
 
 enum DeviceCredentialStore {

@@ -26,6 +26,7 @@ enum RelayClientError: LocalizedError {
 @MainActor
 final class RelayRemoteClient {
   private let config: RelayConfig
+  private let deviceCredential: DeviceCredential?
   private let session: URLSession
   private var task: URLSessionWebSocketTask?
   private var receiveTask: Task<Void, Never>?
@@ -34,8 +35,9 @@ final class RelayRemoteClient {
   private var joinContinuation: CheckedContinuation<Void, Error>?
   private var pendingResponses: [String: (Result<Data, Error>) -> Void] = [:]
 
-  init(config: RelayConfig, session: URLSession = .shared) {
+  init(config: RelayConfig, deviceCredential: DeviceCredential? = nil, session: URLSession = .shared) {
     self.config = config
+    self.deviceCredential = deviceCredential
     self.session = session
   }
 
@@ -61,11 +63,26 @@ final class RelayRemoteClient {
       joinContinuation = continuation
       Task {
         do {
-          try await send([
+          var joinFrame: [String: Any] = [
             "type": "client.join",
             "pairingCode": pairingCode,
             "pairingSecret": config.pairingSecret,
-          ])
+          ]
+          if let deviceCredential {
+            let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
+            let nonce = UUID().uuidString
+            joinFrame["deviceId"] = deviceCredential.deviceId
+            joinFrame["deviceSecret"] = deviceCredential.deviceSecret
+            joinFrame["deviceName"] = deviceCredential.deviceName
+            joinFrame["timestamp"] = timestamp
+            joinFrame["nonce"] = nonce
+            joinFrame["signature"] = deviceCredential.relayJoinSignature(
+              pairingCode: pairingCode,
+              timestamp: timestamp,
+              nonce: nonce
+            )
+          }
+          try await send(joinFrame)
         } catch {
           resumeJoin(throwing: error)
         }

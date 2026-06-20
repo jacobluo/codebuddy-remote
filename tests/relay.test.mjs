@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import test from "node:test";
 
 import { WebSocket } from "ws";
@@ -310,6 +311,80 @@ test("relay client can backfill host events after joining", async () => {
   });
 });
 
+test("relay lets a registered device rejoin with HMAC after pairing expires", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const host = new WebSocket(relayUrl);
+    const firstPhone = new WebSocket(relayUrl);
+    const returningPhone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(host);
+      host.send(JSON.stringify({
+        type: "host.register",
+        pairingCode: "DEVICE1",
+        pairingSecret: "pair-secret-12345",
+      }));
+      await readUntil(host, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(firstPhone);
+      firstPhone.send(JSON.stringify({
+        type: "client.join",
+        pairingCode: "DEVICE1",
+        pairingSecret: "pair-secret-12345",
+        deviceId: "relay-device-1",
+        deviceSecret: "relay-device-secret-1",
+        deviceName: "iPhone",
+      }));
+      await readUntil(firstPhone, (frame) => frame.type === "client.joined");
+      firstPhone.close();
+      await sleep(20);
+      await sleep(30);
+
+      await waitForOpen(returningPhone);
+      const timestamp = String(Date.now());
+      const nonce = "relay-nonce-1";
+      returningPhone.send(JSON.stringify({
+        type: "client.join",
+        pairingCode: "DEVICE1",
+        deviceId: "relay-device-1",
+        timestamp,
+        nonce,
+        signature: signRelayDeviceRequest({
+          secret: "relay-device-secret-1",
+          pairingCode: "DEVICE1",
+          timestamp,
+          nonce,
+        }),
+      }));
+      const joined = await readUntil(returningPhone, (frame) => frame.type === "client.joined");
+      assert.equal(joined.clientId.startsWith("client_"), true);
+
+      const replay = new WebSocket(relayUrl);
+      await waitForOpen(replay);
+      replay.send(JSON.stringify({
+        type: "client.join",
+        pairingCode: "DEVICE1",
+        deviceId: "relay-device-1",
+        timestamp,
+        nonce,
+        signature: signRelayDeviceRequest({
+          secret: "relay-device-secret-1",
+          pairingCode: "DEVICE1",
+          timestamp,
+          nonce,
+        }),
+      }));
+      const replayError = await readUntil(replay, (frame) => frame.type === "error");
+      assert.match(replayError.error, /pairing unavailable/);
+      replay.close();
+    } finally {
+      host.close();
+      firstPhone.close();
+      returningPhone.close();
+    }
+  }, { pairingTtlMs: 20 });
+});
+
 function waitForOpen(ws) {
   if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -351,4 +426,10 @@ function readUntil(ws, predicate) {
     ws.on("message", onMessage);
     ws.on("error", onError);
   });
+}
+
+function signRelayDeviceRequest({ secret, pairingCode, timestamp, nonce }) {
+  return createHmac("sha256", secret)
+    .update(["relay.join", pairingCode, timestamp, nonce].join("\n"))
+    .digest("base64url");
 }

@@ -460,7 +460,12 @@ struct AppView: View {
             handle(event)
           }
         } else {
-          let relay = RelayRemoteClient(config: relayConfig)
+          let credential = localDeviceCredential ?? DeviceCredential.generate()
+          if localDeviceCredential == nil {
+            try? DeviceCredentialStore.save(credential)
+            localDeviceCredential = credential
+          }
+          let relay = RelayRemoteClient(config: relayConfig, deviceCredential: credential)
           relayClient = relay
           let eventStream = relay.streamEvents()
           try await relay.connect()

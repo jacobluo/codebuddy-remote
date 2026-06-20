@@ -20,6 +20,22 @@ final class ChatModelsTests: XCTestCase {
     XCTAssertEqual(signature, "zg0EYAezzych3RabhHipQ-2DLs7K-BH83fG7O1_3iTM")
   }
 
+  func testDeviceCredentialRelayJoinSignatureMatchesRelayHMAC() {
+    let credential = DeviceCredential(
+      deviceId: "device-1",
+      deviceSecret: "secret-1",
+      deviceName: "iPhone"
+    )
+
+    let signature = credential.relayJoinSignature(
+      pairingCode: "PAIR123",
+      timestamp: "1000",
+      nonce: "nonce-1"
+    )
+
+    XCTAssertEqual(signature, "218UVy9woW931dZKyDq5GSYA8uem-sO97qy7rrxkG8Q")
+  }
+
   func testPairingPayloadParsesLocalURL() throws {
     let payload = try PairingPayload.parse(
       "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&bindToken=bind-once&workspace=drink&host=MacBook&expiresAt=2000",

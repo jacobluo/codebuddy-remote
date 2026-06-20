@@ -585,6 +585,41 @@ test("lists and revokes bound devices through admin token", async () => {
   }
 });
 
+test("renames bound devices through admin token", async () => {
+  const deviceDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-device-rename-"));
+  const deviceStoreFile = join(deviceDir, "devices.json");
+  const host = createLocalHost({
+    adapter: new MockCliAdapter(),
+    token: "test-token",
+    deviceStoreFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId: "device-rename",
+        deviceSecret: "secret-rename",
+        deviceName: "Old iPhone",
+      }),
+    });
+
+    const renamed = await requestJson(`${baseUrl}/api/devices/device-rename`, {
+      method: "PATCH",
+      body: JSON.stringify({ deviceName: "Work iPhone" }),
+    });
+
+    assert.equal(renamed.response.status, 200);
+    assert.equal(renamed.body.device.deviceName, "Work iPhone");
+  } finally {
+    await host.close();
+    await rm(deviceDir, { recursive: true, force: true });
+  }
+});
+
 test("writes local security audit records", async () => {
   const auditDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-audit-"));
   const auditFile = join(auditDir, "audit.jsonl");
@@ -628,6 +663,62 @@ test("writes local security audit records", async () => {
   } finally {
     await host.close();
     await rm(auditDir, { recursive: true, force: true });
+  }
+});
+
+test("exports security audit records through admin token", async () => {
+  const auditDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-audit-export-"));
+  const auditFile = join(auditDir, "audit.jsonl");
+  const host = createLocalHost({
+    adapter: new MockCliAdapter(),
+    token: "test-token",
+    auditFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId: "device-audit-export",
+        deviceSecret: "secret-audit-export",
+        deviceName: "iPhone",
+      }),
+    });
+
+    const exported = await requestJson(`${baseUrl}/api/audit?limit=10`);
+
+    assert.equal(exported.response.status, 200);
+    assert.equal(exported.body.entries[0].type, "device.bound");
+    assert.equal(exported.body.entries[0].deviceId, "device-audit-export");
+  } finally {
+    await host.close();
+    await rm(auditDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects admin token calls from non-local forwarded addresses", async () => {
+  const host = createLocalHost({
+    adapter: new MockCliAdapter(),
+    token: "test-token",
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const response = await fetch(`${baseUrl}/api/devices`, {
+      headers: {
+        authorization: "Bearer test-token",
+        "x-forwarded-for": "203.0.113.10",
+      },
+    });
+
+    assert.equal(response.status, 401);
+  } finally {
+    await host.close();
   }
 });
 

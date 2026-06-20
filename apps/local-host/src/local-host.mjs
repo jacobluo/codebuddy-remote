@@ -122,6 +122,25 @@ export function createLocalHost({
         return;
       }
 
+      const renameDeviceMatch = url.pathname.match(/^\/api\/devices\/([^/]+)$/);
+      if (req.method === "PATCH" && renameDeviceMatch) {
+        if (auth.type !== "admin") {
+          sendJson(res, 401, { ok: false, error: "unauthorized" });
+          return;
+        }
+        const device = deviceStore.rename(
+          decodeURIComponent(renameDeviceMatch[1]),
+          String(requestBody.deviceName || "")
+        );
+        audit("device.renamed", {
+          authType: auth.type,
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+        });
+        sendJson(res, 200, { ok: true, device: sanitizeDevice(device) });
+        return;
+      }
+
       const revokeDeviceMatch = url.pathname.match(/^\/api\/devices\/([^/]+)\/revoke$/);
       if (req.method === "POST" && revokeDeviceMatch) {
         if (auth.type !== "admin") {
@@ -135,6 +154,16 @@ export function createLocalHost({
           deviceName: device.deviceName,
         });
         sendJson(res, 200, { ok: true, device: sanitizeDevice(device) });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/audit") {
+        if (auth.type !== "admin") {
+          sendJson(res, 401, { ok: false, error: "unauthorized" });
+          return;
+        }
+        const limit = Number(url.searchParams.get("limit") || 100);
+        sendJson(res, 200, { entries: auditStore.list({ limit }) });
         return;
       }
 
@@ -449,8 +478,10 @@ function authorizeRequest(req, url, {
   rawBody = "",
 }) {
   if (!token) return { authorized: true, type: "admin" };
-  if (url.searchParams.get("token") === token) return { authorized: true, type: "admin" };
-  if (req.headers.authorization === `Bearer ${token}`) {
+  if (url.searchParams.get("token") === token && isLocalAdminRequest(req)) {
+    return { authorized: true, type: "admin" };
+  }
+  if (req.headers.authorization === `Bearer ${token}` && isLocalAdminRequest(req)) {
     return { authorized: true, type: "admin" };
   }
   if (
@@ -476,6 +507,18 @@ function authorizeRequest(req, url, {
     return { authorized: true, type: "device", deviceId: verifiedDevice.deviceId };
   }
   return { authorized: false, type: "none" };
+}
+
+function isLocalAdminRequest(req) {
+  const forwardedFor = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    .trim();
+  if (forwardedFor && !isLoopbackAddress(forwardedFor)) return false;
+  return isLoopbackAddress(req.socket?.remoteAddress || "");
+}
+
+function isLoopbackAddress(address) {
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"].includes(address);
 }
 
 function sendJson(res, status, body) {
@@ -549,7 +592,7 @@ function createHistoryStore(historyFile) {
 
 function createAuditStore(auditFile) {
   if (!auditFile) {
-    return { append() {} };
+    return { append() {}, list() { return []; } };
   }
 
   return {
@@ -565,6 +608,27 @@ function createAuditStore(auditFile) {
           "[codebuddy-remote] failed to write audit log:",
           error instanceof Error ? error.message : String(error)
         );
+      }
+    },
+    list({ limit = 100 } = {}) {
+      if (!existsSync(auditFile)) return [];
+      try {
+        const entries = readFileSync(auditFile, "utf8")
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        if (limit > 0 && entries.length > limit) {
+          return entries.slice(entries.length - limit);
+        }
+        return entries;
+      } catch {
+        return [];
       }
     },
   };
@@ -634,6 +698,16 @@ function createDeviceStore(deviceStoreFile) {
       if (!device) throw new Error("device not found");
       device.revoked = true;
       device.revokedAt = new Date().toISOString();
+      saveDevices(deviceStoreFile, devices);
+      return device;
+    },
+    rename(deviceId, deviceName) {
+      const device = devices.find((item) => item.deviceId === deviceId);
+      if (!device) throw new Error("device not found");
+      const normalizedName = String(deviceName || "").trim();
+      if (!normalizedName) throw new Error("deviceName is required");
+      device.deviceName = normalizedName;
+      device.updatedAt = new Date().toISOString();
       saveDevices(deviceStoreFile, devices);
       return device;
     },
