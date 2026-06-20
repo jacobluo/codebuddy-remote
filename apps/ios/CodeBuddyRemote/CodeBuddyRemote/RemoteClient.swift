@@ -26,6 +26,20 @@ struct RemoteClient {
     return response.sessions
   }
 
+  func listEvents(after: Int = 0, before: Int = 0, limit: Int = 0) async throws -> EventListResponse {
+    var query = [
+      URLQueryItem(name: "token", value: config.token),
+      URLQueryItem(name: "after", value: String(after)),
+    ]
+    if before > 0 {
+      query.append(URLQueryItem(name: "before", value: String(before)))
+    }
+    if limit > 0 {
+      query.append(URLQueryItem(name: "limit", value: String(limit)))
+    }
+    return try await get("/api/events", query: query)
+  }
+
   func sendPrompt(sessionId: String, text: String) async throws {
     let _: CommandEnvelope = try await post(
       "/api/sessions/\(sessionId)/messages",
@@ -91,8 +105,8 @@ struct RemoteClient {
     }
   }
 
-  private func get<T: Decodable>(_ path: String) async throws -> T {
-    var request = URLRequest(url: try endpoint(path))
+  private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+    var request = URLRequest(url: try endpoint(path, query: query))
     request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
     let (data, response) = try await session.data(for: request)
     try validate(response)

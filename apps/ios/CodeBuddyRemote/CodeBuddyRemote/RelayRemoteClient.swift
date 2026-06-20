@@ -97,12 +97,20 @@ final class RelayRemoteClient {
     return response.sessions
   }
 
-  func listEvents(after: Int = 0) async throws -> EventListResponse {
-    try await request(
+  func listEvents(after: Int = 0, before: Int = 0, limit: Int = 0) async throws -> EventListResponse {
+    var payload = ["after": String(after)]
+    if before > 0 {
+      payload["before"] = String(before)
+    }
+    if limit > 0 {
+      payload["limit"] = String(limit)
+    }
+    let response: EventListResponse = try await request(
       name: "listEvents",
       sessionId: "local-host",
-      payload: ["after": String(after)]
+      payload: payload
     )
+    return response
   }
 
   func sendPrompt(sessionId: String, text: String) async throws {

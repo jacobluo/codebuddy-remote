@@ -121,8 +121,10 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
 
       if (req.method === "GET" && url.pathname === "/api/events") {
         const after = Number(url.searchParams.get("after") || 0);
+        const before = Number(url.searchParams.get("before") || 0);
+        const limit = Number(url.searchParams.get("limit") || 0);
         sendJson(res, 200, {
-          events: events.filter((event) => event.seq > after),
+          events: selectEvents(events, { after, before, limit }),
           latestSeq: seq,
         });
         return;
@@ -168,8 +170,10 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
 
     if (command.name === "listEvents") {
       const after = Number(command.payload.after || 0);
+      const before = Number(command.payload.before || 0);
+      const limit = Number(command.payload.limit || 0);
       return {
-        events: events.filter((event) => event.seq > after),
+        events: selectEvents(events, { after, before, limit }),
         latestSeq: seq,
       };
     }
@@ -290,13 +294,27 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
     pushEvent,
     handleCommand: executeCommand,
     getEvents({ after = 0 } = {}) {
-      return events.filter((event) => event.seq > after);
+      return selectEvents(events, { after });
     },
     subscribe(subscriber) {
       subscribers.add(subscriber);
       return () => subscribers.delete(subscriber);
     },
   };
+}
+
+function selectEvents(events, { after = 0, before = 0, limit = 0 } = {}) {
+  let selected = events.filter((event) => {
+    if (after && event.seq <= after) return false;
+    if (before && event.seq >= before) return false;
+    return true;
+  });
+
+  if (limit > 0 && selected.length > limit) {
+    selected = selected.slice(selected.length - limit);
+  }
+
+  return selected;
 }
 
 function isAuthorized(req, url, token) {

@@ -70,6 +70,7 @@ struct AppView: View {
 
   private var maxChatEntries: Int { 120 }
   private var maxRenderedChatEntries: Int { 80 }
+  private var initialReplayEventLimit: Int { 120 }
 
   private var workspaceText: String {
     sessions.first?.workspace ?? "codebuddy-remote"
@@ -357,10 +358,14 @@ struct AppView: View {
         if connectionMode == .local {
           sessions = try await client.listSessions()
           selectedSessionId = sessions.first?.id ?? "terminal-cli"
+          let replay = try await client.listEvents(after: 0, limit: initialReplayEventLimit)
+          for event in replay.events {
+            handle(event)
+          }
           statusText = selectedSessionId.isEmpty ? "没有可用 session" : "已连接 \(selectedSessionId)"
           isStreaming = true
 
-          for try await event in client.streamEvents() {
+          for try await event in client.streamEvents(after: replay.latestSeq) {
             handle(event)
           }
         } else {
@@ -370,7 +375,7 @@ struct AppView: View {
           try await relay.connect()
           sessions = try await relay.listSessions()
           selectedSessionId = sessions.first?.id ?? "terminal-cli"
-          let replay = try await relay.listEvents(after: 0)
+          let replay = try await relay.listEvents(after: 0, limit: initialReplayEventLimit)
           for event in replay.events {
             handle(event)
           }

@@ -160,6 +160,39 @@ test("streams adapter terminal output events", async () => {
   }
 });
 
+test("event history can be windowed without losing latest sequence", async () => {
+  await withHost(async ({ baseUrl, host }) => {
+    for (let index = 1; index <= 5; index += 1) {
+      host.pushEvent({
+        sessionId: "mock-session",
+        name: "assistant.delta",
+        payload: { text: `message-${index}` },
+      });
+    }
+
+    const httpEvents = await requestJson(`${baseUrl}/api/events?after=0&limit=2`);
+    assert.equal(httpEvents.response.status, 200);
+    assert.equal(httpEvents.body.latestSeq, 5);
+    assert.deepEqual(
+      httpEvents.body.events.map((event) => event.payload.text),
+      ["message-4", "message-5"]
+    );
+
+    const commandEvents = await host.handleCommand({
+      type: "command",
+      id: "cmd_windowed_events",
+      sessionId: "local-host",
+      name: "listEvents",
+      payload: { before: 5, limit: 2 },
+    });
+    assert.equal(commandEvents.latestSeq, 5);
+    assert.deepEqual(
+      commandEvents.events.map((event) => event.payload.text),
+      ["message-3", "message-4"]
+    );
+  });
+});
+
 test("terminal-only prompts do not create empty assistant messages", async () => {
   const adapter = {
     listSessions() {
