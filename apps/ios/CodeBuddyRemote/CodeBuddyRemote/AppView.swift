@@ -197,12 +197,6 @@ struct AppView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.visible)
-        .simultaneousGesture(
-          DragGesture(minimumDistance: 8)
-            .onChanged { _ in
-              shouldAutoScroll = false
-            }
-        )
         .onChange(of: chatUpdateToken) {
           guard shouldAutoScroll else { return }
           withAnimation(.easeOut(duration: 0.2)) {
