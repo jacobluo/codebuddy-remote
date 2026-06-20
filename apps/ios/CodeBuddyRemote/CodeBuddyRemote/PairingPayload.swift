@@ -75,7 +75,7 @@ struct PairingPayload: Equatable {
       return PairingPayload(
         mode: mode,
         baseURL: try required("baseURL", in: query),
-        token: try required("token", in: query),
+        token: try required(query["bindToken"] == nil ? "token" : "bindToken", in: query),
         relayURL: "",
         relayToken: "",
         pairingCode: "",

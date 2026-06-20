@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -461,6 +461,218 @@ test("binds a device and accepts signed local API requests", async () => {
 
     assert.equal(promptResponse.status, 202);
     assert.equal(promptResult.command.name, "sendPrompt");
+  } finally {
+    await host.close();
+    await rm(deviceDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects replayed signed requests with the same device nonce", async () => {
+  const deviceDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-replay-"));
+  const deviceStoreFile = join(deviceDir, "devices.json");
+  const adapter = new MockCliAdapter();
+  const host = createLocalHost({
+    adapter,
+    token: "test-token",
+    deviceStoreFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const deviceId = "device-replay";
+  const deviceSecret = "secret-replay";
+
+  try {
+    await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({ deviceId, deviceSecret, deviceName: "iPhone" }),
+    });
+
+    const timestamp = String(Date.now());
+    const nonce = "nonce-reused";
+    const path = "/api/sessions";
+    const signature = signDeviceRequest({
+      secret: deviceSecret,
+      method: "GET",
+      path,
+      body: "",
+      timestamp,
+      nonce,
+    });
+    const headers = {
+      "x-codebuddy-device-id": deviceId,
+      "x-codebuddy-timestamp": timestamp,
+      "x-codebuddy-nonce": nonce,
+      "x-codebuddy-signature": signature,
+    };
+
+    const first = await fetch(`${baseUrl}${path}`, { headers });
+    const second = await fetch(`${baseUrl}${path}`, { headers });
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 401);
+  } finally {
+    await host.close();
+    await rm(deviceDir, { recursive: true, force: true });
+  }
+});
+
+test("lists and revokes bound devices through admin token", async () => {
+  const deviceDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-device-admin-"));
+  const deviceStoreFile = join(deviceDir, "devices.json");
+  const adapter = new MockCliAdapter();
+  const host = createLocalHost({
+    adapter,
+    token: "test-token",
+    deviceStoreFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId: "device-admin",
+        deviceSecret: "secret-admin",
+        deviceName: "iPhone",
+      }),
+    });
+
+    const listed = await requestJson(`${baseUrl}/api/devices`);
+    assert.equal(listed.response.status, 200);
+    assert.deepEqual(Object.keys(listed.body.devices[0]).sort(), [
+      "createdAt",
+      "deviceId",
+      "deviceName",
+      "lastSeenAt",
+      "revoked",
+    ]);
+    assert.equal(listed.body.devices[0].deviceId, "device-admin");
+    assert.equal(listed.body.devices[0].deviceSecret, undefined);
+
+    const revoked = await requestJson(`${baseUrl}/api/devices/device-admin/revoke`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    assert.equal(revoked.response.status, 200);
+    assert.equal(revoked.body.device.revoked, true);
+
+    const timestamp = String(Date.now());
+    const nonce = "nonce-after-revoke";
+    const path = "/api/sessions";
+    const signature = signDeviceRequest({
+      secret: "secret-admin",
+      method: "GET",
+      path,
+      body: "",
+      timestamp,
+      nonce,
+    });
+    const signed = await fetch(`${baseUrl}${path}`, {
+      headers: {
+        "x-codebuddy-device-id": "device-admin",
+        "x-codebuddy-timestamp": timestamp,
+        "x-codebuddy-nonce": nonce,
+        "x-codebuddy-signature": signature,
+      },
+    });
+    assert.equal(signed.status, 401);
+  } finally {
+    await host.close();
+    await rm(deviceDir, { recursive: true, force: true });
+  }
+});
+
+test("writes local security audit records", async () => {
+  const auditDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-audit-"));
+  const auditFile = join(auditDir, "audit.jsonl");
+  const adapter = new MockCliAdapter();
+  const host = createLocalHost({
+    adapter,
+    token: "test-token",
+    auditFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId: "device-audit",
+        deviceSecret: "secret-audit",
+        deviceName: "iPhone",
+      }),
+    });
+    await requestJson(`${baseUrl}/api/sessions/mock-session/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text: "请检查项目状态" }),
+    });
+    await requestJson(`${baseUrl}/api/sessions/mock-session/interrupt`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    const lines = (await readFile(auditFile, "utf8")).trim().split("\n");
+    const entries = lines.map((line) => JSON.parse(line));
+    assert.deepEqual(
+      entries.map((entry) => entry.type),
+      ["device.bound", "prompt.sent", "session.interrupt"]
+    );
+    assert.equal(entries[1].promptLength, "请检查项目状态".length);
+    assert.equal(entries[1].promptSha256.length, 64);
+    assert.equal(entries[1].promptText, undefined);
+  } finally {
+    await host.close();
+    await rm(auditDir, { recursive: true, force: true });
+  }
+});
+
+test("consumes one-time bind tokens after device binding", async () => {
+  const deviceDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-bind-token-"));
+  const deviceStoreFile = join(deviceDir, "devices.json");
+  const adapter = new MockCliAdapter();
+  const host = createLocalHost({
+    adapter,
+    token: "test-token",
+    bindToken: "bind-once",
+    deviceStoreFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const first = await fetch(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer bind-once",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        deviceId: "device-one",
+        deviceSecret: "secret-one",
+        deviceName: "iPhone",
+      }),
+    });
+    const second = await fetch(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer bind-once",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        deviceId: "device-two",
+        deviceSecret: "secret-two",
+        deviceName: "iPad",
+      }),
+    });
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 401);
   } finally {
     await host.close();
     await rm(deviceDir, { recursive: true, force: true });

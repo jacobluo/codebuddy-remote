@@ -22,13 +22,13 @@ final class ChatModelsTests: XCTestCase {
 
   func testPairingPayloadParsesLocalURL() throws {
     let payload = try PairingPayload.parse(
-      "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&token=local-token&workspace=drink&host=MacBook&expiresAt=2000",
+      "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&bindToken=bind-once&workspace=drink&host=MacBook&expiresAt=2000",
       now: Date(timeIntervalSince1970: 1)
     )
 
     XCTAssertEqual(payload.mode, .local)
     XCTAssertEqual(payload.baseURL, "http://192.168.1.23:17320")
-    XCTAssertEqual(payload.token, "local-token")
+    XCTAssertEqual(payload.token, "bind-once")
     XCTAssertEqual(payload.workspace, "drink")
     XCTAssertEqual(payload.host, "MacBook")
   }

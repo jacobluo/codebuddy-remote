@@ -21,12 +21,14 @@ export function createRunConfig({
     host: env.CODEBUDDY_REMOTE_HOST || "0.0.0.0",
     port: Number(env.CODEBUDDY_REMOTE_PORT || 17320),
     token: env.CODEBUDDY_REMOTE_TOKEN || createToken(),
+    bindToken: env.CODEBUDDY_REMOTE_BIND_TOKEN || createToken(),
     relayUrl: env.CODEBUDDY_REMOTE_RELAY_URL || "",
     relayToken: env.CODEBUDDY_REMOTE_RELAY_TOKEN || "",
     relayPairingSecret: env.CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET || createToken(),
     pairingCode: env.CODEBUDDY_REMOTE_PAIRING_CODE || createPairingCode(),
     historyFile: env.CODEBUDDY_REMOTE_HISTORY_FILE || defaultHistoryFile(cwd, homeDir),
     deviceStoreFile: env.CODEBUDDY_REMOTE_DEVICE_STORE_FILE || defaultDeviceStoreFile(homeDir),
+    auditFile: env.CODEBUDDY_REMOTE_AUDIT_FILE || defaultAuditFile(cwd, homeDir),
   };
 }
 
@@ -76,7 +78,7 @@ export function buildPairingPayload({
     ...common,
     mode: "local",
     baseURL: selectPairingBaseUrl(urls),
-    token: config.token,
+    bindToken: config.bindToken,
   };
 }
 
@@ -108,12 +110,14 @@ Environment:
   CODEBUDDY_REMOTE_HOST           Local HTTP host, default: 0.0.0.0
   CODEBUDDY_REMOTE_PORT           Local HTTP port, default: 17320
   CODEBUDDY_REMOTE_TOKEN          Local HTTP token, generated when omitted
+  CODEBUDDY_REMOTE_BIND_TOKEN     One-time local device bind token, generated when omitted
   CODEBUDDY_REMOTE_RELAY_URL      Relay WebSocket URL, optional
   CODEBUDDY_REMOTE_RELAY_TOKEN    Relay auth token, optional
   CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET Relay client pairing secret, generated when omitted
   CODEBUDDY_REMOTE_PAIRING_CODE   Relay pairing code, generated when omitted
   CODEBUDDY_REMOTE_HISTORY_FILE   Event history JSONL file, default: ~/.codebuddy-remote/history/<workspace>.jsonl
   CODEBUDDY_REMOTE_DEVICE_STORE_FILE Bound device list, default: ~/.codebuddy-remote/devices.json
+  CODEBUDDY_REMOTE_AUDIT_FILE     Security audit JSONL file, default: ~/.codebuddy-remote/audit/<workspace>.jsonl
 `;
 }
 
@@ -139,9 +143,11 @@ export async function main() {
   const host = createLocalHost({
     adapter,
     token: config.token,
+    bindToken: config.bindToken,
     host: config.host,
     historyFile: config.historyFile,
     deviceStoreFile: config.deviceStoreFile,
+    auditFile: config.auditFile,
   });
   const relay = connectRelay({
     relayUrl: config.relayUrl,
@@ -170,9 +176,11 @@ export async function main() {
   console.log(`  Workspace   ${config.cwd}`);
   console.log(`  Local Host  http://${config.host}:${actualPort}`);
   console.log(`  Local Token ${config.token}`);
+  console.log(`  Bind Token  ${config.bindToken}`);
   console.log(`  CodeBuddy   ${config.cliPath}`);
   console.log(`  History     ${config.historyFile}`);
   console.log(`  Devices     ${config.deviceStoreFile}`);
+  console.log(`  Audit       ${config.auditFile}`);
   if (config.relayUrl) {
     console.log(`  Relay       ${config.relayUrl}`);
     console.log(`  Pairing     ${config.pairingCode}`);
@@ -232,6 +240,13 @@ function defaultHistoryFile(cwd, homeDir) {
 
 function defaultDeviceStoreFile(homeDir) {
   return path.join(homeDir, ".codebuddy-remote", "devices.json");
+}
+
+function defaultAuditFile(cwd, homeDir) {
+  const workspaceName = path.basename(cwd) || "workspace";
+  const safeName = workspaceName.replace(/[^a-zA-Z0-9._-]+/g, "-") || "workspace";
+  const hash = crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 16);
+  return path.join(homeDir, ".codebuddy-remote", "audit", `${safeName}-${hash}.jsonl`);
 }
 
 function selectPairingBaseUrl(urls) {

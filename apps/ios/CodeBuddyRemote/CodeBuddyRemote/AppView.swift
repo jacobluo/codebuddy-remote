@@ -32,6 +32,8 @@ struct AppView: View {
   @AppStorage("remote.pairingCode") private var pairingCode = RelayConfig.defaultValue.pairingCode
   @AppStorage("remote.relayPairingSecret") private var relayPairingSecret = RelayConfig.defaultValue.pairingSecret
   @AppStorage("remote.relayToken") private var relayToken = RelayConfig.defaultValue.token
+  @AppStorage("remote.pairedWorkspace") private var pairedWorkspace = ""
+  @AppStorage("remote.pairedHost") private var pairedHost = ""
   @AppStorage("remote.chatLog.v4") private var persistedChatLog = ""
 
   @State private var sessions: [RemoteSession] = []
@@ -78,7 +80,29 @@ struct AppView: View {
   private var initialReplayEventLimit: Int { 120 }
 
   private var workspaceText: String {
-    sessions.first?.workspace ?? "codebuddy-remote"
+    if !pairedWorkspace.isEmpty {
+      return pairedWorkspace
+    }
+    return sessions.first?.workspace ?? "codebuddy-remote"
+  }
+
+  private var hostText: String {
+    if !pairedHost.isEmpty {
+      return pairedHost
+    }
+    return ProcessInfo.processInfo.hostName
+  }
+
+  private var bindingStateText: String {
+    switch connectionMode {
+    case .local:
+      if let credential = localDeviceCredential {
+        return "已绑定 \(credential.deviceName)"
+      }
+      return "未绑定"
+    case .relay:
+      return relayPairingSecret.isEmpty ? "未配置配对密钥" : "已配置配对密钥"
+    }
   }
 
   private var conversationItems: [ConversationItem] {
@@ -172,7 +196,7 @@ struct AppView: View {
         Text("CodeBuddy")
           .font(.headline.weight(.semibold))
           .lineLimit(1)
-        Text("\(connectionMode.title) · \(workspaceText)")
+        Text("\(connectionMode.title) · \(workspaceText) · \(hostText)")
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -353,6 +377,13 @@ struct AppView: View {
           LabeledContent("状态", value: statusText)
           LabeledContent("Workspace", value: workspaceText)
         }
+
+        Section("当前连接") {
+          LabeledContent("模式", value: connectionMode.title)
+          LabeledContent("Host", value: hostText)
+          LabeledContent("Workspace", value: workspaceText)
+          LabeledContent("绑定", value: bindingStateText)
+        }
       }
       .navigationTitle("连接设置")
       .toolbar {
@@ -488,6 +519,8 @@ struct AppView: View {
   }
 
   private func applyPairingPayload(_ payload: PairingPayload) {
+    pairedWorkspace = payload.workspace
+    pairedHost = payload.host
     switch payload.mode {
     case .local:
       modeRaw = ConnectionMode.local.rawValue

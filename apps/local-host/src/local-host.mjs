@@ -27,13 +27,17 @@ const MAX_DEVICE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 export function createLocalHost({
   adapter,
   token,
+  bindToken = "",
   host = "127.0.0.1",
   historyFile = "",
   deviceStoreFile = "",
+  auditFile = "",
 }) {
   let server;
   const historyStore = createHistoryStore(historyFile);
   const deviceStore = createDeviceStore(deviceStoreFile);
+  const auditStore = createAuditStore(auditFile);
+  let bindTokenConsumed = false;
   let seq = historyStore.latestSeq;
   const events = [...historyStore.events];
   const subscribers = new Set();
@@ -69,17 +73,34 @@ export function createLocalHost({
         ? await readJsonPayload(req)
         : { body: {}, rawBody: "" };
       const requestBody = requestPayload.body;
+      const auth = authorizeRequest(req, url, {
+        token,
+        bindToken,
+        bindTokenConsumed,
+        deviceStore,
+        rawBody: requestPayload.rawBody,
+      });
 
-      if (!isAuthorized(req, url, token, deviceStore, requestPayload.rawBody)) {
+      if (!auth.authorized) {
         sendJson(res, 401, { ok: false, error: "unauthorized" });
         return;
       }
 
       if (req.method === "POST" && url.pathname === "/api/devices/bind") {
+        if (auth.type !== "admin" && auth.type !== "bind") {
+          sendJson(res, 401, { ok: false, error: "unauthorized" });
+          return;
+        }
         const device = deviceStore.bind({
           deviceId: String(requestBody.deviceId || ""),
           deviceSecret: String(requestBody.deviceSecret || ""),
           deviceName: String(requestBody.deviceName || "CodeBuddy Remote"),
+        });
+        if (auth.type === "bind") bindTokenConsumed = true;
+        audit("device.bound", {
+          authType: auth.type,
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
         });
         sendJson(res, 200, {
           ok: true,
@@ -89,6 +110,31 @@ export function createLocalHost({
             createdAt: device.createdAt,
           },
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/devices") {
+        if (auth.type !== "admin") {
+          sendJson(res, 401, { ok: false, error: "unauthorized" });
+          return;
+        }
+        sendJson(res, 200, { devices: deviceStore.list() });
+        return;
+      }
+
+      const revokeDeviceMatch = url.pathname.match(/^\/api\/devices\/([^/]+)\/revoke$/);
+      if (req.method === "POST" && revokeDeviceMatch) {
+        if (auth.type !== "admin") {
+          sendJson(res, 401, { ok: false, error: "unauthorized" });
+          return;
+        }
+        const device = deviceStore.revoke(decodeURIComponent(revokeDeviceMatch[1]));
+        audit("device.revoked", {
+          authType: auth.type,
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+        });
+        sendJson(res, 200, { ok: true, device: sanitizeDevice(device) });
         return;
       }
 
@@ -126,6 +172,13 @@ export function createLocalHost({
           name: "sendPrompt",
           payload: { text, mode: body.mode || "craft" },
         });
+        audit("prompt.sent", {
+          authType: auth.type,
+          deviceId: auth.deviceId,
+          sessionId,
+          promptLength: text.length,
+          promptSha256: crypto.createHash("sha256").update(text).digest("hex"),
+        });
         sendJson(res, 202, await executeCommand(command));
         return;
       }
@@ -139,6 +192,11 @@ export function createLocalHost({
           sessionId,
           name: action,
           payload: {},
+        });
+        audit(`session.${action}`, {
+          authType: auth.type,
+          deviceId: auth.deviceId,
+          sessionId,
         });
         sendJson(res, 202, await executeCommand(command));
         return;
@@ -159,6 +217,12 @@ export function createLocalHost({
           name: "sendTerminalInput",
           payload: { text, label: body.label || "" },
         });
+        audit("approval.input", {
+          authType: auth.type,
+          deviceId: auth.deviceId,
+          sessionId,
+          label: body.label || "",
+        });
         sendJson(res, 202, await executeCommand(command));
         return;
       }
@@ -176,6 +240,11 @@ export function createLocalHost({
 
       if (req.method === "GET" && url.pathname === "/api/events/stream") {
         const after = Number(url.searchParams.get("after") || 0);
+        audit("connection.stream", {
+          authType: auth.type,
+          deviceId: auth.deviceId,
+          after,
+        });
         streamEvents(res, after);
         return;
       }
@@ -314,6 +383,16 @@ export function createLocalHost({
     throw new Error(`unsupported command: ${command.name}`);
   }
 
+  function audit(type, fields = {}) {
+    auditStore.append({
+      type,
+      at: new Date().toISOString(),
+      ...Object.fromEntries(
+        Object.entries(fields).filter(([, value]) => value !== undefined && value !== "")
+      ),
+    });
+  }
+
   return {
     listen(port = 17320) {
       server = http.createServer(handle);
@@ -362,11 +441,29 @@ function selectEvents(events, { after = 0, before = 0, limit = 0 } = {}) {
   return selected;
 }
 
-function isAuthorized(req, url, token, deviceStore, rawBody = "") {
-  if (!token) return true;
-  if (url.searchParams.get("token") === token) return true;
-  if (req.headers.authorization === `Bearer ${token}`) return true;
-  return deviceStore.verifyRequest({
+function authorizeRequest(req, url, {
+  token,
+  bindToken,
+  bindTokenConsumed,
+  deviceStore,
+  rawBody = "",
+}) {
+  if (!token) return { authorized: true, type: "admin" };
+  if (url.searchParams.get("token") === token) return { authorized: true, type: "admin" };
+  if (req.headers.authorization === `Bearer ${token}`) {
+    return { authorized: true, type: "admin" };
+  }
+  if (
+    bindToken &&
+    !bindTokenConsumed &&
+    req.method === "POST" &&
+    url.pathname === "/api/devices/bind" &&
+    req.headers.authorization === `Bearer ${bindToken}`
+  ) {
+    return { authorized: true, type: "bind" };
+  }
+
+  const verifiedDevice = deviceStore.verifyRequest({
     method: req.method || "GET",
     path: url.pathname,
     body: rawBody,
@@ -375,6 +472,10 @@ function isAuthorized(req, url, token, deviceStore, rawBody = "") {
     nonce: req.headers["x-codebuddy-nonce"],
     signature: req.headers["x-codebuddy-signature"],
   });
+  if (verifiedDevice) {
+    return { authorized: true, type: "device", deviceId: verifiedDevice.deviceId };
+  }
+  return { authorized: false, type: "none" };
 }
 
 function sendJson(res, status, body) {
@@ -446,6 +547,29 @@ function createHistoryStore(historyFile) {
   };
 }
 
+function createAuditStore(auditFile) {
+  if (!auditFile) {
+    return { append() {} };
+  }
+
+  return {
+    append(entry) {
+      try {
+        mkdirSync(dirname(auditFile), { recursive: true });
+        appendFileSync(auditFile, `${JSON.stringify(entry)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      } catch (error) {
+        console.warn(
+          "[codebuddy-remote] failed to write audit log:",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    },
+  };
+}
+
 function loadHistoryEvents(historyFile) {
   if (!existsSync(historyFile)) return [];
 
@@ -476,6 +600,7 @@ function shouldPersistEvent(event) {
 
 function createDeviceStore(deviceStoreFile) {
   const devices = loadDevices(deviceStoreFile);
+  const usedNonces = new Map();
 
   return {
     bind({ deviceId, deviceSecret, deviceName }) {
@@ -501,6 +626,17 @@ function createDeviceStore(deviceStoreFile) {
       saveDevices(deviceStoreFile, devices);
       return device;
     },
+    list() {
+      return devices.map(sanitizeDevice);
+    },
+    revoke(deviceId) {
+      const device = devices.find((item) => item.deviceId === deviceId);
+      if (!device) throw new Error("device not found");
+      device.revoked = true;
+      device.revokedAt = new Date().toISOString();
+      saveDevices(deviceStoreFile, devices);
+      return device;
+    },
     verifyRequest({ method, path, body, deviceId, timestamp, nonce, signature }) {
       if (!deviceId || !timestamp || !nonce || !signature) return false;
       const device = devices.find((item) => item.deviceId === deviceId && !item.revoked);
@@ -509,6 +645,9 @@ function createDeviceStore(deviceStoreFile) {
       const requestTime = Number(timestamp);
       if (!Number.isFinite(requestTime)) return false;
       if (Math.abs(Date.now() - requestTime) > MAX_DEVICE_CLOCK_SKEW_MS) return false;
+      pruneUsedNonces(usedNonces);
+      const nonceKey = `${deviceId}:${nonce}`;
+      if (usedNonces.has(nonceKey)) return false;
 
       const expected = signDeviceRequest({
         secret: device.deviceSecret,
@@ -519,10 +658,28 @@ function createDeviceStore(deviceStoreFile) {
         nonce,
       });
       if (!timingSafeStringEqual(String(signature), expected)) return false;
+      usedNonces.set(nonceKey, Date.now() + MAX_DEVICE_CLOCK_SKEW_MS);
       device.lastSeenAt = new Date().toISOString();
       saveDevices(deviceStoreFile, devices);
-      return true;
+      return sanitizeDevice(device);
     },
+  };
+}
+
+function pruneUsedNonces(usedNonces) {
+  const now = Date.now();
+  for (const [key, expiresAt] of usedNonces) {
+    if (expiresAt <= now) usedNonces.delete(key);
+  }
+}
+
+function sanitizeDevice(device) {
+  return {
+    deviceId: device.deviceId,
+    deviceName: device.deviceName,
+    createdAt: device.createdAt,
+    lastSeenAt: device.lastSeenAt,
+    revoked: Boolean(device.revoked),
   };
 }
 

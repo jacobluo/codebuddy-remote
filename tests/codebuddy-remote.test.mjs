@@ -27,12 +27,14 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
       CODEBUDDY_REMOTE_PORT: "18080",
       CODEBUDDY_CLI_PATH: "custom-codebuddy",
       CODEBUDDY_REMOTE_TOKEN: "fixed-token",
+      CODEBUDDY_REMOTE_BIND_TOKEN: "bind-once",
       CODEBUDDY_REMOTE_RELAY_URL: "ws://relay.example.com/relay",
       CODEBUDDY_REMOTE_RELAY_TOKEN: "relay-token",
       CODEBUDDY_REMOTE_RELAY_PAIRING_SECRET: "pair-secret-12345",
       CODEBUDDY_REMOTE_PAIRING_CODE: "PAIR123",
       CODEBUDDY_REMOTE_HISTORY_FILE: "/tmp/custom-history.jsonl",
       CODEBUDDY_REMOTE_DEVICE_STORE_FILE: "/tmp/custom-devices.json",
+      CODEBUDDY_REMOTE_AUDIT_FILE: "/tmp/custom-audit.jsonl",
     },
   });
 
@@ -41,12 +43,14 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
   assert.equal(config.port, 18080);
   assert.equal(config.cliPath, "custom-codebuddy");
   assert.equal(config.token, "fixed-token");
+  assert.equal(config.bindToken, "bind-once");
   assert.equal(config.relayUrl, "ws://relay.example.com/relay");
   assert.equal(config.relayToken, "relay-token");
   assert.equal(config.relayPairingSecret, "pair-secret-12345");
   assert.equal(config.pairingCode, "PAIR123");
   assert.equal(config.historyFile, "/tmp/custom-history.jsonl");
   assert.equal(config.deviceStoreFile, "/tmp/custom-devices.json");
+  assert.equal(config.auditFile, "/tmp/custom-audit.jsonl");
 });
 
 test("codebuddy-remote derives a stable history file from the workspace", () => {
@@ -61,6 +65,10 @@ test("codebuddy-remote derives a stable history file from the workspace", () => 
     /^\/Users\/robiluo\/\.codebuddy-remote\/history\/drink-[a-f0-9]{16}\.jsonl$/
   );
   assert.equal(config.deviceStoreFile, "/Users/robiluo/.codebuddy-remote/devices.json");
+  assert.match(
+    config.auditFile,
+    /^\/Users\/robiluo\/\.codebuddy-remote\/audit\/drink-[a-f0-9]{16}\.jsonl$/
+  );
 });
 
 test("codebuddy-remote configures plain CodeBuddy CLI as an interactive terminal process", () => {
@@ -114,6 +122,7 @@ test("pairing URL encodes local connection details", () => {
     config: {
       cwd: "/Users/robiluo/aicoding/drink",
       token: "local-token",
+      bindToken: "bind-once",
       relayUrl: "",
       relayToken: "",
       relayPairingSecret: "pair-secret-12345",
@@ -134,7 +143,8 @@ test("pairing URL encodes local connection details", () => {
   assert.equal(url.searchParams.get("v"), "1");
   assert.equal(url.searchParams.get("mode"), "local");
   assert.equal(url.searchParams.get("baseURL"), "http://192.168.1.23:17320");
-  assert.equal(url.searchParams.get("token"), "local-token");
+  assert.equal(url.searchParams.get("token"), null);
+  assert.equal(url.searchParams.get("bindToken"), "bind-once");
   assert.equal(url.searchParams.get("workspace"), "drink");
   assert.equal(url.searchParams.get("host"), "DONGSHUILUO-MB5");
   assert.equal(url.searchParams.get("expiresAt"), "121000");
