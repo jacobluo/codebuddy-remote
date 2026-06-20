@@ -10,6 +10,7 @@ reports/archive/generated/
 
 # Xcode / SwiftPM generated files
 DerivedData/
+**/build/
 .build/
 *.xcuserdata/
 *.xcuserstate

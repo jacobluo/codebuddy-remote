@@ -35,6 +35,7 @@ Local Host / Relay = 安全连接与事件转发层
 
 - `apps/local-host/`：本地控制面服务，支持 mock adapter 和真实 CodeBuddy CLI adapter。
 - `apps/mobile-web/`：手机 Web 控制台静态页面。
+- `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端，连接本机 `codebuddy-remote`。
 - `packages/protocol/`：统一 command/event 协议工具。
 - `tests/`：协议和 Local Host 行为测试。
 - `reports/codebuddy-remote-final-plan.md`：当前最终方案。
@@ -99,8 +100,6 @@ CODEBUDDY_REMOTE_ADAPTER=serve npm run start:local-host
 CODEBUDDY_REMOTE_ADAPTER=real npm run start:local-host
 ```
 
-`real` 模式使用 `codebuddy -p --output-format stream-json`，每次 prompt 启动一个 CLI 进程，主要用于对照测试。
-
 `real` 模式使用 `codebuddy -p --output-format stream-json`，每次 prompt 启动一个 CLI 进程，不是目标的长期驻留形态。
 
 如需换开发调试端口：
@@ -120,6 +119,29 @@ CODEBUDDY_REMOTE_ADAPTER=real CODEBUDDY_REMOTE_PORT=17321 npm run start:local-ho
 - `GET /api/events/stream`
 
 `codebuddy-remote` 已验证支持长期驻留多轮对话：多轮 prompt 复用同一个 ACP session 和同一个 `conversationId`。
+
+## iOS App
+
+原生 iOS 客户端位于：
+
+```text
+apps/ios/CodeBuddyRemote/CodeBuddyRemote.xcodeproj
+```
+
+打开工程后运行 `CodeBuddyRemote` target，在 App 内输入 Mac 端启动 `codebuddy-remote` 后打印的局域网 URL 和 token。App 会订阅本地事件流、显示终端输出，并把手机输入发送到同一个长期驻留的 CodeBuddy CLI session。
+
+本仓库的命令行编译验证：
+
+```sh
+xcodebuild -project apps/ios/CodeBuddyRemote/CodeBuddyRemote.xcodeproj \
+  -target CodeBuddyRemote \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
+
+当前本机没有可用 iOS Simulator runtime，所以 scheme 运行和 UI 启动验证需要先在 Xcode > Settings > Components 安装 iOS runtime。
 
 ## 下一步
 
