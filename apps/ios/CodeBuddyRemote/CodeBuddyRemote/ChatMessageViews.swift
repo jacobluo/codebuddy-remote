@@ -95,9 +95,15 @@ private struct UserMessageBubble: View {
 private struct AssistantMarkdownView: View {
   let text: String
 
+  private var displayText: String {
+    let limit = 12_000
+    guard text.count > limit else { return text }
+    return "内容较长，已显示最新部分：\n\n" + text.suffix(limit)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      ForEach(Array(AssistantMarkdownParser.blocks(from: text).enumerated()), id: \.offset) { _, block in
+      ForEach(Array(AssistantMarkdownParser.blocks(from: displayText).prefix(120).enumerated()), id: \.offset) { _, block in
         switch block.kind {
         case .heading:
           Text(block.text)

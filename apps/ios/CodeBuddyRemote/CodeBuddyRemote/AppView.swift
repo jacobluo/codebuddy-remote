@@ -49,6 +49,7 @@ struct AppView: View {
   @State private var errorMessage: String?
   @State private var streamTask: Task<Void, Never>?
   @State private var persistTask: Task<Void, Never>?
+  @State private var chatNotifyTask: Task<Void, Never>?
   @State private var relayClient: RelayRemoteClient?
 
   private var connectionMode: ConnectionMode {
@@ -67,14 +68,20 @@ struct AppView: View {
     RemoteClient(config: config)
   }
 
-  private var maxChatEntries: Int { 240 }
+  private var maxChatEntries: Int { 120 }
+  private var maxRenderedChatEntries: Int { 80 }
 
   private var workspaceText: String {
     sessions.first?.workspace ?? "codebuddy-remote"
   }
 
   private var conversationItems: [ConversationItem] {
-    ChatDisplayBuilder.conversationItems(from: chatEntries)
+    ChatDisplayBuilder.conversationItems(from: visibleChatEntries)
+  }
+
+  private var visibleChatEntries: [ChatEntry] {
+    guard chatEntries.count > maxRenderedChatEntries else { return chatEntries }
+    return Array(chatEntries.suffix(maxRenderedChatEntries))
   }
 
   var body: some View {
@@ -339,6 +346,8 @@ struct AppView: View {
     shouldAutoScroll = true
     persistTask?.cancel()
     persistTask = nil
+    chatNotifyTask?.cancel()
+    chatNotifyTask = nil
     persistedChatLog = ""
     latestHandledSeq = 0
     statusText = "正在连接"
@@ -701,7 +710,7 @@ struct AppView: View {
 
   private func persistChatEntriesAndNotify() {
     trimChatEntriesIfNeeded()
-    chatUpdateToken += 1
+    scheduleChatUpdate()
     schedulePersistChatEntries()
   }
 
@@ -726,6 +735,16 @@ struct AppView: View {
         return
       }
       persistedChatLog = text
+    }
+  }
+
+  private func scheduleChatUpdate() {
+    guard chatNotifyTask == nil else { return }
+    chatNotifyTask = Task {
+      try? await Task.sleep(nanoseconds: 80_000_000)
+      guard !Task.isCancelled else { return }
+      chatUpdateToken += 1
+      chatNotifyTask = nil
     }
   }
 }
