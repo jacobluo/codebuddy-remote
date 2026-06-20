@@ -93,6 +93,48 @@ test("terminal semantic parser strips inline CodeBuddy tips from assistant text"
   assert.equal(events[0].payload.text, "ok-result");
 });
 
+test("terminal semantic parser preserves numbered assistant lists", () => {
+  const parser = new TerminalSemanticParser();
+
+  const events = parser.write(`
+● 功能特性列表
+  1. 定时提醒 - 按照设定的时间间隔发送系统通知
+  2. 喝水记录 - 记录每次喝水
+  3. 今日统计 - 实时显示当天已喝水次数
+`);
+
+  assert.deepEqual(
+    events.map((event) => event.payload.text),
+    [
+      "功能特性列表",
+      "1. 定时提醒 - 按照设定的时间间隔发送系统通知",
+      "2. 喝水记录 - 记录每次喝水",
+      "3. 今日统计 - 实时显示当天已喝水次数",
+    ]
+  );
+});
+
+test("terminal semantic parser filters permission choices without dropping normal numbered content", () => {
+  const parser = new TerminalSemanticParser();
+
+  const events = parser.write(`
+● 我来整理方案。
+  1. Yes
+  2. No
+  3. 今日统计需要继续保留
+  4. 配置项需要持久化
+`);
+
+  assert.deepEqual(
+    events.map((event) => event.payload.text),
+    [
+      "我来整理方案。",
+      "3. 今日统计需要继续保留",
+      "4. 配置项需要持久化",
+    ]
+  );
+});
+
 test("terminal semantic parser does not emit duplicate semantic events for redrawn lines", () => {
   const parser = new TerminalSemanticParser();
 

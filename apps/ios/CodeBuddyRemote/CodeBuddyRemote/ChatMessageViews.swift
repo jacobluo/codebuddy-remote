@@ -115,6 +115,18 @@ private struct AssistantMarkdownView: View {
               .foregroundStyle(.primary)
               .fixedSize(horizontal: false, vertical: true)
           }
+        case .orderedList(let marker):
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(marker)
+              .font(.body.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .monospacedDigit()
+              .frame(minWidth: 22, alignment: .trailing)
+            Text(block.text)
+              .font(.body)
+              .foregroundStyle(.primary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         case .paragraph:
           Text(block.text)
             .font(.body)

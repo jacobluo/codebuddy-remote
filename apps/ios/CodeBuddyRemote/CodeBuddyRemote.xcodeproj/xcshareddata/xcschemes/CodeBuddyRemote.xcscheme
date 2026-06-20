@@ -29,7 +29,27 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "222222222222222222222301"
+               BuildableName = "CodeBuddyRemoteTests.xctest"
+               BlueprintName = "CodeBuddyRemoteTests"
+               ReferencedContainer = "container:CodeBuddyRemote.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "111111111111111111111401"
+            BuildableName = "CodeBuddyRemote.app"
+            BlueprintName = "CodeBuddyRemote"
+            ReferencedContainer = "container:CodeBuddyRemote.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

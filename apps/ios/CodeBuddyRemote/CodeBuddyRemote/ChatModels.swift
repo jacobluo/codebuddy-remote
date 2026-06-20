@@ -74,6 +74,7 @@ struct AssistantBlock {
     case paragraph
     case heading
     case bullet
+    case orderedList(marker: String)
     case codeBlock(language: String)
   }
 
@@ -196,6 +197,9 @@ enum AssistantMarkdownParser {
       }
 
       if shouldRenderAsCodeLine(line, nextLine: nextLine) {
+        if codeBuffer.isEmpty, isLikelyCodeLine(line) {
+          codeLanguage = "Swift"
+        }
         codeBuffer.append(line)
         continue
       } else {
@@ -208,9 +212,17 @@ enum AssistantMarkdownParser {
         if let last = blocks.indices.last, blocks[last].text.hasSuffix("几个值得") {
           blocks[last].text.removeLast("几个值得".count)
           blocks[last].text = blocks[last].text.trimmingCharacters(in: .whitespacesAndNewlines)
+          if blocks[last].text.isEmpty {
+            blocks.remove(at: last)
+          }
           blocks.append(AssistantBlock(kind: .heading, text: "几个值得注意的点："))
           continue
         }
+      }
+
+      if let orderedList = orderedListItem(from: line) {
+        blocks.append(AssistantBlock(kind: .orderedList(marker: orderedList.marker), text: orderedList.text))
+        continue
       }
 
       if let bulletText = bulletText(from: line) {
@@ -225,7 +237,7 @@ enum AssistantMarkdownParser {
 
       if let last = blocks.indices.last {
         switch blocks[last].kind {
-        case .paragraph, .bullet:
+        case .paragraph, .bullet, .orderedList:
           blocks[last].text = "\(blocks[last].text) \(line)"
         case .heading, .codeBlock:
           blocks.append(AssistantBlock(kind: .paragraph, text: line))
@@ -255,13 +267,29 @@ enum AssistantMarkdownParser {
     if nextLine.contains("├") || nextLine.contains("└") || nextLine.contains("│") {
       return line.hasSuffix("/") || line.hasPrefix("/")
     }
+    if isLikelyCodeLine(line) {
+      return true
+    }
     return false
+  }
+
+  private static func isLikelyCodeLine(_ line: String) -> Bool {
+    let patterns = [
+      #"^import\s+[A-Za-z_][A-Za-z0-9_]*$"#,
+      #"^(@[A-Za-z_][A-Za-z0-9_]*|struct\s+|class\s+|enum\s+|protocol\s+|extension\s+|func\s+|var\s+|let\s+|if\s+|for\s+|while\s+|switch\s+|case\s+|return\b)"#,
+      #"^[A-Za-z_][A-Za-z0-9_]*\((.*)\)$"#,
+      #"^\.[A-Za-z_][A-Za-z0-9_]*\((.*)\)$"#,
+      #"^\}?$"#,
+    ]
+
+    return patterns.contains { pattern in
+      line.range(of: pattern, options: .regularExpression) != nil
+    }
   }
 
   private static func bulletText(from line: String) -> String? {
     let patterns = [
       #"^[-•]\s+(.+)$"#,
-      #"^\d+[.)]\s+(.+)$"#,
     ]
 
     for pattern in patterns {
@@ -276,6 +304,19 @@ enum AssistantMarkdownParser {
     }
 
     return nil
+  }
+
+  private static func orderedListItem(from line: String) -> (marker: String, text: String)? {
+    guard let markerRange = line.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) else {
+      return nil
+    }
+
+    let marker = String(line[markerRange])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = String(line[markerRange.upperBound...])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return nil }
+    return (marker, text)
   }
 
   private static func isHeading(_ line: String) -> Bool {

@@ -1,0 +1,165 @@
+import XCTest
+@testable import CodeBuddyRemote
+
+final class ChatModelsTests: XCTestCase {
+  func testConversationItemsGroupCompletedActivityUntilFinalAssistantMessage() {
+    let user = ChatEntry(id: UUID(), role: .user, text: "扫描代码")
+    let thinking = ChatEntry(id: UUID(), role: .assistant, text: "我先读取项目结构。")
+    let readTool = ChatEntry(id: UUID(), role: .tool, title: "Read", text: "Read 58 lines", status: "completed")
+    let command = ChatEntry(id: UUID(), role: .command, title: "npm test", text: "40 tests passed", status: "passed")
+    let answer = ChatEntry(id: UUID(), role: .assistant, text: "代码扫描完成，以下是项目概览：")
+    let permission = ChatEntry(id: UUID(), role: .permission, title: "需要确认", status: "waiting")
+
+    let items = ChatDisplayBuilder.conversationItems(from: [
+      user,
+      thinking,
+      readTool,
+      command,
+      answer,
+      permission,
+    ])
+
+    XCTAssertEqual(items.count, 4)
+
+    guard case .entry(let first) = items[0] else {
+      return XCTFail("Expected first item to be user entry")
+    }
+    XCTAssertEqual(first.id, user.id)
+
+    guard case .activityGroup(let group) = items[1] else {
+      return XCTFail("Expected completed work to be grouped")
+    }
+    XCTAssertEqual(group.entries.map(\.id), [thinking.id, readTool.id, command.id])
+
+    guard case .entry(let finalAnswer) = items[2] else {
+      return XCTFail("Expected final assistant answer to stay visible")
+    }
+    XCTAssertEqual(finalAnswer.id, answer.id)
+
+    guard case .entry(let waitingPermission) = items[3] else {
+      return XCTFail("Expected waiting permission to stay expanded")
+    }
+    XCTAssertEqual(waitingPermission.id, permission.id)
+  }
+
+  func testAssistantMarkdownParserKeepsOrderedListsStructured() {
+    let blocks = AssistantMarkdownParser.blocks(from: """
+    功能特性：
+    1. 定时提醒 - 按照设定间隔发送通知
+    2. 今日统计 - 展示当天喝水次数
+    - 设置持久化
+    """)
+
+    XCTAssertEqual(blocks.count, 4)
+    assertHeading(blocks[0], "功能特性：")
+    assertOrderedList(blocks[1], marker: "1.", text: "定时提醒 - 按照设定间隔发送通知")
+    assertOrderedList(blocks[2], marker: "2.", text: "今日统计 - 展示当天喝水次数")
+    assertBullet(blocks[3], "设置持久化")
+  }
+
+  func testAssistantMarkdownParserRendersTreesAsCodeBlocks() {
+    let blocks = AssistantMarkdownParser.blocks(from: """
+    当前代码结构如下：
+    /Users/robiluo/aicoding/drink
+    ├── Package.swift
+    └── Sources
+        └── DrinkWaterApp.swift
+    后续可以清理重复目录。
+    """)
+
+    XCTAssertEqual(blocks.count, 3)
+    assertHeading(blocks[0], "当前代码结构如下：")
+    assertCodeBlock(blocks[1], language: "Plain text") { text in
+      XCTAssertTrue(text.contains("Package.swift"))
+      XCTAssertTrue(text.contains("DrinkWaterApp.swift"))
+    }
+    assertParagraph(blocks[2], "后续可以清理重复目录。")
+  }
+
+  func testAssistantMarkdownParserRendersFencedAndLikelySwiftCodeBlocks() {
+    let fenced = AssistantMarkdownParser.blocks(from: """
+    ```swift
+    import SwiftUI
+    struct Row: View {
+    }
+    ```
+    """)
+    XCTAssertEqual(fenced.count, 1)
+    assertCodeBlock(fenced[0], language: "swift") { text in
+      XCTAssertTrue(text.contains("import SwiftUI"))
+      XCTAssertTrue(text.contains("struct Row"))
+    }
+
+    let inferred = AssistantMarkdownParser.blocks(from: """
+    import SwiftUI
+    struct Row: View {
+    }
+    """)
+    XCTAssertEqual(inferred.count, 1)
+    assertCodeBlock(inferred[0], language: "Swift") { text in
+      XCTAssertTrue(text.contains("import SwiftUI"))
+      XCTAssertTrue(text.contains("struct Row"))
+    }
+  }
+
+  func testAssistantMarkdownParserRepairsSplitChineseHeading() {
+    let blocks = AssistantMarkdownParser.blocks(from: """
+    几个值得
+    意的点：
+    - 未设置 git remote
+    """)
+
+    XCTAssertEqual(blocks.count, 2)
+    assertHeading(blocks[0], "几个值得注意的点：")
+    assertBullet(blocks[1], "未设置 git remote")
+  }
+
+  private func assertParagraph(_ block: AssistantBlock, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
+    guard case .paragraph = block.kind else {
+      return XCTFail("Expected paragraph", file: file, line: line)
+    }
+    XCTAssertEqual(block.text, text, file: file, line: line)
+  }
+
+  private func assertHeading(_ block: AssistantBlock, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
+    guard case .heading = block.kind else {
+      return XCTFail("Expected heading", file: file, line: line)
+    }
+    XCTAssertEqual(block.text, text, file: file, line: line)
+  }
+
+  private func assertBullet(_ block: AssistantBlock, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
+    guard case .bullet = block.kind else {
+      return XCTFail("Expected bullet", file: file, line: line)
+    }
+    XCTAssertEqual(block.text, text, file: file, line: line)
+  }
+
+  private func assertOrderedList(
+    _ block: AssistantBlock,
+    marker: String,
+    text: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    guard case .orderedList(let actualMarker) = block.kind else {
+      return XCTFail("Expected ordered list", file: file, line: line)
+    }
+    XCTAssertEqual(actualMarker, marker, file: file, line: line)
+    XCTAssertEqual(block.text, text, file: file, line: line)
+  }
+
+  private func assertCodeBlock(
+    _ block: AssistantBlock,
+    language: String,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    verify: (String) -> Void
+  ) {
+    guard case .codeBlock(let actualLanguage) = block.kind else {
+      return XCTFail("Expected code block", file: file, line: line)
+    }
+    XCTAssertEqual(actualLanguage, language, file: file, line: line)
+    verify(block.text)
+  }
+}

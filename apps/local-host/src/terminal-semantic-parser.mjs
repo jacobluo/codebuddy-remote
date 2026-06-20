@@ -96,7 +96,7 @@ function parseAssistant(line) {
 function parseAssistantContinuation(line, { inAssistant, lastTool }) {
   if (!inAssistant) return null;
   if (lastTool) return null;
-  if (isNoise(line) || isMenuOption(line) || isBoxDrawing(line)) return null;
+  if (isNoise(line) || isPermissionMenuOption(line) || isBoxDrawing(line)) return null;
   if (/^(Bash command|Do you want to proceed\?)$/i.test(line)) return null;
   return {
     name: "assistant.delta",
@@ -260,8 +260,8 @@ function stripInlineNoise(text) {
     .trim();
 }
 
-function isMenuOption(text) {
-  return /^>?\s*\d+\.\s+/.test(text);
+function isPermissionMenuOption(text) {
+  return /^>?\s*\d+\.\s+(yes|no|allow|deny|approve|cancel|reject|允许|拒绝|同意|不同意)\b/i.test(text);
 }
 
 function isBoxDrawing(text) {

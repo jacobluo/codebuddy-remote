@@ -15,7 +15,18 @@
 		111111111111111111111107 /* RelayRemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111008 /* RelayRemoteClient.swift */; };
 		111111111111111111111108 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111010 /* ChatModels.swift */; };
 		111111111111111111111109 /* ChatMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111011 /* ChatMessageViews.swift */; };
+		222222222222222222222101 /* ChatModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222001 /* ChatModelsTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		222222222222222222222401 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 111111111111111111111801 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 111111111111111111111401;
+			remoteInfo = CodeBuddyRemote;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		111111111111111111111001 /* CodeBuddyRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBuddyRemoteApp.swift; sourceTree = "<group>"; };
@@ -29,6 +40,8 @@
 		111111111111111111111009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		111111111111111111111010 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		111111111111111111111011 /* ChatMessageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageViews.swift; sourceTree = "<group>"; };
+		222222222222222222222001 /* ChatModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelsTests.swift; sourceTree = "<group>"; };
+		222222222222222222222002 /* CodeBuddyRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodeBuddyRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +55,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		222222222222222222222201 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -49,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				111111111111111111111302 /* CodeBuddyRemote */,
+				222222222222222222222302 /* CodeBuddyRemoteTests */,
 				111111111111111111111303 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -74,8 +95,17 @@
 			isa = PBXGroup;
 			children = (
 				111111111111111111111007 /* CodeBuddyRemote.app */,
+				222222222222222222222002 /* CodeBuddyRemoteTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		222222222222222222222302 /* CodeBuddyRemoteTests */ = {
+			isa = PBXGroup;
+			children = (
+				222222222222222222222001 /* ChatModelsTests.swift */,
+			);
+			path = CodeBuddyRemoteTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -100,6 +130,26 @@
 			productReference = 111111111111111111111007 /* CodeBuddyRemote.app */;
 			productType = "com.apple.product-type.application";
 		};
+		222222222222222222222301 /* CodeBuddyRemoteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 222222222222222222222701 /* Build configuration list for PBXNativeTarget "CodeBuddyRemoteTests" */;
+			buildPhases = (
+				222222222222222222222501 /* Sources */,
+				222222222222222222222201 /* Frameworks */,
+				222222222222222222222601 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				222222222222222222222402 /* PBXTargetDependency */,
+			);
+			name = CodeBuddyRemoteTests;
+			packageProductDependencies = (
+			);
+			productName = CodeBuddyRemoteTests;
+			productReference = 222222222222222222222002 /* CodeBuddyRemoteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -112,6 +162,10 @@
 				TargetAttributes = {
 					111111111111111111111401 = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					222222222222222222222301 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 111111111111111111111401;
 					};
 				};
 			};
@@ -133,12 +187,20 @@
 			projectRoot = "";
 			targets = (
 				111111111111111111111401 /* CodeBuddyRemote */,
+				222222222222222222222301 /* CodeBuddyRemoteTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		111111111111111111111601 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		222222222222222222222601 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -163,7 +225,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		222222222222222222222501 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				222222222222222222222101 /* ChatModelsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		222222222222222222222402 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 111111111111111111111401 /* CodeBuddyRemote */;
+			targetProxy = 222222222222222222222401 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		111111111111111111112001 /* Debug */ = {
@@ -335,6 +413,56 @@
 			};
 			name = Release;
 		};
+		222222222222222222222703 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.relaxorg.CodeBuddyRemoteTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CodeBuddyRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CodeBuddyRemote";
+			};
+			name = Debug;
+		};
+		222222222222222222222704 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.relaxorg.CodeBuddyRemoteTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CodeBuddyRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CodeBuddyRemote";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -352,6 +480,15 @@
 			buildConfigurations = (
 				111111111111111111112001 /* Debug */,
 				111111111111111111112002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		222222222222222222222701 /* Build configuration list for PBXNativeTarget "CodeBuddyRemoteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				222222222222222222222703 /* Debug */,
+				222222222222222222222704 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
