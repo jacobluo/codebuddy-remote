@@ -132,6 +132,26 @@ final class ChatModelsTests: XCTestCase {
     XCTAssertEqual(waitingPermission.id, permission.id)
   }
 
+  func testVisibleConversationItemsUseBoundedTailWithoutMutatingHistory() {
+    let entries = makeLargeConversationEntries(turns: 300)
+
+    let items = ChatDisplayBuilder.visibleConversationItems(from: entries, maxEntries: 80)
+
+    XCTAssertEqual(entries.count, 1_200)
+    XCTAssertLessThanOrEqual(items.flatMap(\.entries).count, 80)
+    XCTAssertFalse(items.flatMap(\.entries).contains { $0.text == "请求 0" })
+    XCTAssertTrue(items.flatMap(\.entries).contains { $0.text == "结果 299" })
+  }
+
+  func testVisibleConversationItemsBuildLargeHistoryWithinBoundedWork() {
+    let entries = makeLargeConversationEntries(turns: 300)
+
+    measure(metrics: [XCTClockMetric()]) {
+      let items = ChatDisplayBuilder.visibleConversationItems(from: entries, maxEntries: 80)
+      XCTAssertLessThanOrEqual(items.flatMap(\.entries).count, 80)
+    }
+  }
+
   func testAssistantMarkdownParserKeepsOrderedListsStructured() {
     let blocks = AssistantMarkdownParser.blocks(from: """
     功能特性：
@@ -251,5 +271,17 @@ final class ChatModelsTests: XCTestCase {
     }
     XCTAssertEqual(actualLanguage, language, file: file, line: line)
     verify(block.text)
+  }
+
+  private func makeLargeConversationEntries(turns: Int) -> [ChatEntry] {
+    var entries: [ChatEntry] = []
+    entries.reserveCapacity(turns * 4)
+    for index in 0..<turns {
+      entries.append(ChatEntry(id: UUID(), role: .user, text: "请求 \(index)"))
+      entries.append(ChatEntry(id: UUID(), role: .assistant, text: "我先检查第 \(index) 轮。"))
+      entries.append(ChatEntry(id: UUID(), role: .tool, title: "Read \(index)", status: "completed"))
+      entries.append(ChatEntry(id: UUID(), role: .assistant, text: "结果 \(index)"))
+    }
+    return entries
   }
 }

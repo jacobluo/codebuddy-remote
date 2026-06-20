@@ -55,7 +55,7 @@ struct ChatInputDock: View {
         .foregroundStyle(.red)
         .lineLimit(2)
         .multilineTextAlignment(.center)
-    } else {
+    } else if !statusLine.isEmpty {
       Text(statusLine)
         .font(.footnote.weight(.medium))
         .foregroundStyle(.secondary)

@@ -67,12 +67,7 @@ struct AppView: View {
   }
 
   private var conversationItems: [ConversationItem] {
-    ChatDisplayBuilder.conversationItems(from: visibleChatEntries)
-  }
-
-  private var visibleChatEntries: [ChatEntry] {
-    guard chatEntries.count > maxRenderedChatEntries else { return chatEntries }
-    return Array(chatEntries.suffix(maxRenderedChatEntries))
+    ChatDisplayBuilder.visibleConversationItems(from: chatEntries, maxEntries: maxRenderedChatEntries)
   }
 
   var body: some View {
@@ -251,30 +246,14 @@ struct AppView: View {
     if isStreaming {
       return "\(ProcessInfo.processInfo.hostName) \(statusText)"
     }
-    return "未连接"
+    return ""
   }
 
   @ViewBuilder
   private var emptyConversation: some View {
-    if isStreaming || !chatEntries.isEmpty {
-      Color.clear
-        .frame(maxWidth: .infinity, minHeight: 1)
-        .padding(.top, 48)
-    } else {
-      VStack(alignment: .leading, spacing: 14) {
-        Text("未连接")
-          .font(.title2.weight(.semibold))
-        Button {
-          connect()
-        } label: {
-          Label("连接", systemImage: "link")
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(isStreaming)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+    Color.clear
+      .frame(maxWidth: .infinity, minHeight: 1)
       .padding(.top, 48)
-    }
   }
 
   private var settingsSheet: some View {

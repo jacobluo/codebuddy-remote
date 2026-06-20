@@ -67,6 +67,15 @@ enum ConversationItem: Identifiable {
       group.id
     }
   }
+
+  var entries: [ChatEntry] {
+    switch self {
+    case .entry(let entry):
+      [entry]
+    case .activityGroup(let group):
+      group.entries
+    }
+  }
 }
 
 struct AssistantBlock {
@@ -83,6 +92,15 @@ struct AssistantBlock {
 }
 
 enum ChatDisplayBuilder {
+  static func visibleEntries(from entries: [ChatEntry], maxEntries: Int) -> [ChatEntry] {
+    guard maxEntries > 0, entries.count > maxEntries else { return entries }
+    return Array(entries.suffix(maxEntries))
+  }
+
+  static func visibleConversationItems(from entries: [ChatEntry], maxEntries: Int) -> [ConversationItem] {
+    conversationItems(from: visibleEntries(from: entries, maxEntries: maxEntries))
+  }
+
   static func conversationItems(from entries: [ChatEntry]) -> [ConversationItem] {
     var items: [ConversationItem] = []
     var pendingActivities: [ChatEntry] = []
