@@ -1,6 +1,6 @@
 # 安全设计与登录流程
 
-Generated: 2026-06-20
+Updated: 2026-06-21
 
 ## 目标
 
@@ -8,10 +8,11 @@ CodeBuddy Remote 的安全目标是让手机可以控制本地 CodeBuddy session
 
 核心约束：
 
-- CodeBuddy CLI / IDE 仍是 session owner，完整 workspace、上下文、登录态和权限系统都留在 Mac 本地。
-- iOS App 只做控制端：发送 prompt、查看 normalized events、审批当前 permission、中断和恢复任务。
+- 当前产品由本地长期驻留 CodeBuddy CLI 作为 session owner，完整 workspace、上下文、登录态和权限系统都留在 Mac 本地。
+- IDE Bridge 仅保留为 archive 中的探索方向，不属于当前安全主线。
+- iOS App 只做控制端：发送 prompt、查看 normalized events、发送审批控制键、中断和恢复任务。
 - 产品上只保留 Relay 模式；Local Host 是 Mac 端内部控制面，不再作为手机端连接方式。
-- Relay 只转发 CodeBuddyRemote 协议消息，不做通用 TCP 端口穿透，不保存 prompt、diff、terminal output。
+- Relay 只转发 CodeBuddyRemote E2E `encrypted` payload，不做通用 TCP 端口穿透，不保存 prompt、diff、terminal output。
 - 配对必须显式、短期有效、可撤销，并尽量减少长期共享 token 的使用。
 
 ## 术语
@@ -205,10 +206,9 @@ P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305
 - 安全审计日志已有独立文件和导出 API，但还没有独立可视化页面。
 - Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
 
-## 下一步安全任务
+## 安全 Backlog
 
-1. 为审计日志增加独立可视化页面。
-2. 为设备管理增加 iOS 侧查看入口。
+- 审计日志可视化入口：当前已有独立 JSONL 文件和 `GET /api/audit` 导出 API，后续可在 iOS 或 Mac 管理界面增加查看入口。
 
 ## 验收清单
 

@@ -1,235 +1,122 @@
-# CodeBuddy 手机远程控制最终方案
+# CodeBuddy Remote 最终方案
 
-Generated: 2026-06-19
+Updated: 2026-06-21
 
-## 结论
+## 一句话结论
 
-采用“本地 CodeBuddy session owner + 手机远程控制端”的方案。
+CodeBuddy Remote 是“Mac 本地 CodeBuddy CLI session owner + iOS 远程控制端 + Relay 安全转发”的方案。
 
 ```text
 iOS App
-  ↓
-安全控制通道 Relay / Tunnel / P2P
-  ↓
-Local Host
-  ├─ CLI Adapter → CodeBuddy CLI session
-  └─ IDE Adapter → CodeBuddy IDE bridge extension → CodeBuddy / Genie session
+  <-> Relay WebSocket + device HMAC + E2E encrypted payload
+  <-> Mac codebuddy-remote
+  <-> Local Host
+  <-> TerminalCliAdapter
+  <-> 本地长期驻留 codebuddy CLI
 ```
 
-核心原则：
+当前产品方案统一为 Relay 模式。Local Host 仍存在，但只是 Mac 端内部控制面，不再作为手机端直连入口。
 
-- 本地 CodeBuddy CLI / IDE 持有完整 session、workspace、上下文和权限系统。
-- 手机只负责提交 prompt、展示事件、审批工具调用、中断或恢复任务。
-- Relay / Tunnel 只做安全转发，不保存 prompt、diff、terminal output 等敏感内容。
-- CLI 和 IDE 统一成一套手机端协议，前端不关心底层 session 来源。
+## 当前决策
 
-不采用“手机独立 companion agent”。那条路线会引入上下文同步、源码镜像、凭据复制、权限扩散和 session 一致性问题。
+- 用户在目标 workspace 执行 `codebuddy-remote`，就等价于在该目录启动一个真实的长期驻留 `codebuddy` CLI。
+- Mac 终端保留原始 CodeBuddy CLI 界面输出和本地键盘交互。
+- iOS App 通过 Relay 向同一个 CLI session 发送 prompt、查看 normalized events、发送审批控制键、中断和恢复。
+- Relay 不做通用端口穿透，不暴露 Mac Local HTTP API，不接受明文 `command` / `event` / `response` payload。
+- 正式 Mac/iOS 业务 payload 只走 `encrypted` 信封，Relay 只看到路由元数据和密文。
+- 不做手机独立 companion agent，不把源码、完整上下文、凭据或 CodeBuddy 登录态同步到云端。
+- IDE Bridge 探索材料保留在 `docs/archive/`，不作为当前实现主线。
 
-## 目标边界
+## 已实现范围
 
-### P0 必须完成
+### Mac CLI Host
 
-- 手机向本地活动 session 发送 prompt。
-- 手机实时接收 assistant 回复、tool call、terminal output、diff 摘要和状态变化。
-- 手机审批或拒绝高风险工具调用。
-- 手机中断、恢复、查看 busy/running 状态。
-- 本地 Host 重启、网络断开、手机刷新后能恢复连接。
-- 远程控制显式配对、可撤销、可审计。
+代码位置：
 
-### P1 后置
+- `apps/local-host/src/codebuddy-remote.mjs`
+- `apps/local-host/src/terminal-cli-adapter.mjs`
+- `apps/local-host/src/local-host.mjs`
+- `apps/local-host/src/relay-client.mjs`
+- `apps/local-host/src/relay-e2e.mjs`
 
-- 手机查看完整历史消息。
-- 多项目、多 workspace 同时在线。
-- IDE 与 CLI session 无缝迁移。
-- 手机端编辑复杂 diff。
-- 多设备同时控制同一个本地 session。
+已实现：
 
-### 明确不做
+- `codebuddy-remote` 要求配置 `CODEBUDDY_REMOTE_RELAY_URL`，缺少时不生成 pairing URL 并退出。
+- 默认用 `TerminalCliAdapter` 通过 macOS 伪终端启动真实 `codebuddy`。
+- 当前终端显示真实 CodeBuddy CLI TUI，手机 prompt 写入同一个终端 session。
+- Local Host 提供内部 HTTP/SSE 控制面和统一 command/event 处理。
+- 事件按 `seq` 编号，支持 `listEvents` 窗口查询和重连回放。
+- semantic events 写入本地 JSONL 历史文件，重启后可恢复历史。
+- 原始 `terminal.output` 刷新帧不写入历史，避免 TUI 输出撑爆存储。
+- 本地设备库和审计日志写入 `~/.codebuddy-remote/`。
 
-- 不把项目源码同步到云端 Relay。
-- 不让手机直接执行本地 shell 命令。
-- 不让手机直接读写任意本地文件。
-- 不把探针扩展里的任意 command execution 暴露到正式产品。
-- 不依赖 CodeBuddy 私有 bundle 内部实现作为长期稳定接口。
+### Relay
 
-## 实施路线
+代码位置：
 
-### M1: CLI 本地闭环
+- `apps/relay/src/relay.mjs`
+- `apps/relay/src/server.mjs`
 
-目标：先证明手机能稳定控制本地 CLI session。
+已实现：
 
-```text
-codebuddy-remote
-  ↓
-CodeBuddy CLI
-  ↓
-CLI Adapter
-  ↓
-Local Host
-  ↓
-iOS App
-```
+- WebSocket endpoint：`/relay`。
+- health endpoint：`/health`。
+- Host 注册可用 `CODEBUDDY_RELAY_TOKEN` 保护；公网监听时必须配置 token，除非显式设置本机调试开关。
+- Pairing code 默认短期有效，已配对后不允许第二个 client 复用。
+- Pairing secret 只存 hash，用于首次 join 校验。
+- 设备登记后，iOS 可用设备级 HMAC 在 pairing 过期后重新 join。
+- Relay join nonce 有窗口内 replay cache。
+- Relay frame payload 只接受 `type: "encrypted"`，明文 `command` / `event` / `response` 会被拒绝。
+- Relay 限制 frame size，并对 pairing 失败做简单限速。
 
-范围：
+### iOS App
 
-- 用户在目标项目目录执行 `codebuddy-remote`，该目录就是 CodeBuddy workspace。
-- `codebuddy-remote` 通过伪终端以前台交互模式启动长期驻留的 `codebuddy`，本地终端保留 CodeBuddy CLI 界面输出和键盘交互。
-- `codebuddy-remote` 同时启动给 iOS App 使用的 Local API，手机 prompt 写入同一个 CodeBuddy 终端 session。
+代码位置：
+
+- `apps/ios/CodeBuddyRemote/CodeBuddyRemote/`
+- `apps/ios/CodeBuddyRemote/CodeBuddyRemoteTests/`
+
+已实现：
+
+- Relay-only 连接配置。
+- 扫码读取 `cbr://pair?...`，也支持在模拟器里粘贴 Pairing URL 或用 deep link 打开。
+- 拒绝旧的 `mode=local` pairing URL。
+- 生成 `deviceId + deviceSecret + deviceName`，`deviceSecret` 保存到 Keychain。
+- Relay join 使用 pairing secret 或设备 HMAC。
+- Mac/iOS E2E：`P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305`。
+- AppStorage 保存 Relay 配置、host/workspace 和 UI 聊天缓存。
+- 聊天消息按 ChatGPT/Codex 风格展示：用户气泡、assistant Markdown、工具/命令/测试/计划/diff/权限活动卡片。
+- 工具和思考过程完成后折叠为活动组，可点击展开。
+- 输入框默认单行，支持显式换行和 `+` 操作菜单。
+- 连接设置显示 mode、workspace、host 和绑定状态。
+
+### 协议和测试
+
+代码位置：
+
+- `packages/protocol/src/index.mjs`
+- `tests/`
+
+已实现命令：
+
 - `listSessions`
-- `selectSession`
+- `listEvents`
 - `sendPrompt`
-- `streamEvents`
-- `getState`
+- `sendTerminalInput`
 - `interrupt`
 - `resume`
+- `getState`
 
-验收标准：
+协议中还保留但当前 Local Host 尚未产品化处理的命令：
 
-- 手机端发送 prompt 后，本地 CLI session 继续执行。
-- 手机端能看到 assistant 流式回复。
-- 手机断网、刷新或重连后能恢复当前 session 状态。
-- Local Host 能维护 session registry 和当前 busy/running 状态。
-- Relay 或 tunnel 层不持久化敏感正文。
-
-### M2: CLI 审批闭环
-
-目标：让手机端安全处理高风险工具调用。
-
-范围：
-
-- 解析 CLI 侧 permission request。
-- 输出统一的 `tool.permissionRequested` 事件。
-- 支持 `approveTool` / `rejectTool`。
-- 本地记录轻量审计日志。
-
-验收标准：
-
-- 手机收到工具审批卡片。
-- 用户可 `allow_once` 或 `deny`。
-- 审计日志记录设备、session、request id、选择和时间。
-- 默认不提供长期 `allow_always`。
-
-### M3: IDE Bridge 事件验证
-
-目标：把 IDE 从“可注入 prompt”推进到“可观测 session”。
-
-```text
-CodeBuddy IDE / Genie
-  ↓
-Bridge Extension
-  ↓
-Local Host
-  ↓
-iOS App
-```
-
-范围：
-
-- Bridge extension 改为白名单 API，不保留通用 `/exec`。
-- 验证 assistant message stream。
-- 验证 tool call / diff / terminal output event stream。
-- 验证 permission request 和 approval/rejection 链路。
-- 验证 conversation id 与当前 IDE session 的绑定。
-- 验证 IDE reload、sleep、restart 后恢复能力。
-
-验收标准：
-
-- 至少能稳定订阅 assistant message chunk。
-- 能可靠读取当前 session state。
-- 能明确判断 IDE 权限审批是否可产品化。
-- 输出 IDE capability matrix。
-
-如果 IDE 事件订阅无法稳定获得，IDE Bridge 降级为轻量能力：手机可发送 prompt，结果仍主要在桌面 IDE 查看。
-
-### M4: 双轨统一
-
-目标：CLI 和 IDE 共用同一套手机端协议。
-
-范围：
-
-- CLI Adapter 和 IDE Adapter 输出同构事件。
-- Local Host 做事件归一化、去重、短期重放和 state snapshot。
-- 手机端支持选择 CLI / IDE session。
-- session 绑定 workspace fingerprint 和用户确认机制。
-
-验收标准：
-
-- 手机端不需要理解 CLI/IDE 内部实现。
-- 断线后可按 `seq` 重放事件或恢复 snapshot。
-- prompt 不会发到错误 workspace 或错误 session。
-
-## Local Host 设计
-
-Local Host 是本地统一控制面。
-
-职责：
-
-- 管理本地 session registry。
-- 管理手机配对、设备 token 和撤销。
-- 接入 CLI Adapter / IDE Adapter。
-- 归一化 command 和 event。
-- 维护 event seq、短期 ring buffer 和 state snapshot。
-- 执行本地安全策略。
-- 记录轻量审计日志。
-
-不做：
-
-- 不保存完整聊天历史，除非用户显式开启本地日志。
-- 不绕过 CodeBuddy 自身权限系统。
-- 不开放任意 shell、任意 IDE command 或任意文件读写。
-- 不向 Relay 暴露明文敏感内容。
-
-本地 API 只监听 `127.0.0.1` 或 Unix domain socket。对手机远程访问必须经过配对后的安全通道。
-
-## 统一协议
-
-### Commands
-
-```json
-{
-  "type": "command",
-  "id": "cmd_...",
-  "sessionId": "local_session_...",
-  "name": "sendPrompt",
-  "payload": {
-    "text": "继续上一个任务",
-    "mode": "craft"
-  }
-}
-```
-
-命令集合：
-
-- `listSessions`
 - `selectSession`
-- `sendPrompt`
 - `approveTool`
 - `rejectTool`
-- `interrupt`
-- `resume`
-- `getState`
 - `openInDesktop`
 
-### Events
-
-```json
-{
-  "type": "event",
-  "id": "evt_...",
-  "sessionId": "local_session_...",
-  "conversationId": "chat_...",
-  "seq": 42,
-  "name": "assistant.delta",
-  "payload": {
-    "text": "正在检查文件..."
-  }
-}
-```
-
-事件集合：
+已实现事件：
 
 - `session.created`
-- `session.selected`
 - `session.state`
 - `user.message`
 - `assistant.delta`
@@ -241,185 +128,192 @@ Local Host 是本地统一控制面。
 - `diff.created`
 - `terminal.output`
 - `error`
-- `connection.resumed`
 
-### Approval
+## 运行流程
 
-```json
-{
-  "type": "event",
-  "name": "tool.permissionRequested",
-  "sessionId": "local_session_...",
-  "payload": {
-    "requestId": "approval_...",
-    "tool": "execute_command",
-    "risk": "high",
-    "title": "运行 shell 命令",
-    "summary": "即将在当前项目目录执行 npm test",
-    "options": ["allow_once", "deny"]
-  }
-}
+### 1. 启动 Relay
+
+本机调试：
+
+```sh
+npm run start:relay
 ```
 
-审批选项：
+公网部署建议让 Node 监听本机，再由 Caddy / Nginx / Cloudflare Tunnel 暴露 `wss://`：
 
-- `allow_once`
-- `deny`
-- `allow_for_session`
+```sh
+CODEBUDDY_RELAY_HOST=127.0.0.1 \
+CODEBUDDY_RELAY_PORT=17330 \
+CODEBUDDY_RELAY_TOKEN=<relay-token> \
+npm run start:relay
+```
 
-默认不提供 `allow_always`。如果未来支持，必须绑定 tool、workspace、command pattern 和过期时间。
+### 2. 在目标项目启动 Mac Host
+
+```sh
+cd /Users/robiluo/aicoding/drink
+CODEBUDDY_REMOTE_RELAY_URL=wss://<relay-domain>/relay \
+CODEBUDDY_REMOTE_RELAY_TOKEN=<relay-token> \
+codebuddy-remote
+```
+
+启动后终端会显示：
+
+- workspace
+- internal Local Host 地址
+- history/device/audit 文件路径
+- Relay URL
+- pairing code
+- 二维码
+- Pairing URL
+
+### 3. iOS 绑定
+
+真机：
+
+- 打开 iOS App。
+- 点击扫码绑定。
+- 扫描 Mac 终端二维码。
+
+模拟器：
+
+```sh
+xcrun simctl openurl booted 'cbr://pair?...'
+```
+
+或把 Pairing URL 粘贴到 App 的连接设置里。
 
 ## 安全模型
 
-### 配对
+### 信任边界
 
-- 首次连接由桌面端显示一次性配对码或二维码。
-- 配对码短期有效，例如 60 到 120 秒。
-- 配对成功后发放设备级 token。
-- 用户可在桌面端查看、重命名、撤销已配对设备。
+- CodeBuddy CLI / workspace / 登录态 / 权限系统全部留在 Mac 本地。
+- iOS 只持有 Relay 连接配置、短期 pairing 信息和本机 device credential。
+- Relay 只转发应用层密文，不保存 prompt、diff、terminal output 或 response 正文。
+- Local Host 管理 API 只作为 Mac 内部控制面使用；管理 token 请求要求本机来源。
 
-### 通道
+### 配对和设备身份
 
-优先级：
+- Pairing URL 只生成 `mode=relay`。
+- Pairing URL 包含短期 `pairingCode` 和 `pairingSecret`，二维码应视为短期敏感凭证。
+- Relay token 只用于 Mac host 注册，不进入二维码，不由 iOS 保存。
+- 首次 join 可登记设备凭证。
+- 后续同一设备可用 HMAC 重新 join，并受 timestamp、nonce 和 replay cache 保护。
+- Mac 端支持设备列表、重命名、撤销 API。
 
-1. 本地同网直连 / P2P。
-2. 用户显式开启的 tunnel。
-3. Relay 转发。
+### 端到端加密
 
-Relay 要求：
+Relay join 阶段交换临时公钥：
 
-- 不持久化消息正文。
-- 不记录 prompt、diff、terminal output。
-- 只保留必要连接元数据和错误指标。
-- 支持端到端加密时，Relay 只见密文。
+```text
+P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305
+```
 
-### 手机端权限
+正式 command/event/response 都封装为：
 
-允许：
+```json
+{
+  "type": "encrypted",
+  "version": 1,
+  "alg": "P256-HKDF-SHA256-CHACHA20-POLY1305",
+  "seq": 1,
+  "nonce": "...",
+  "ciphertext": "..."
+}
+```
 
-- 发送 prompt。
-- 读取 normalized events。
-- 审批当前 pending request。
-- interrupt / resume。
-- 查看 session state。
+Relay 只校验信封结构并转发，不解密正文。
 
-禁止：
+### 手机端禁止能力
 
-- 执行任意 IDE command。
-- 执行任意 shell 命令。
-- 直接读写任意本地文件。
-- 修改 CodeBuddy 配置、登录态或扩展列表。
+- 不能发送任意 shell 命令。
+- 不能读取任意本地文件。
+- 不能写入任意本地文件。
+- 不能调用任意 IDE command。
+- 不能修改 CodeBuddy 登录态、配置或扩展列表。
 
-### 审计
+`sendTerminalInput` 只接受单个审批控制键，例如 `1` / `2` / `3` / `y` / `n` / `q`。
 
-Local Host 本地保存轻量审计日志：
+## 本地持久化
 
-- 设备连接和断开。
-- prompt command 的时间、设备、session id、长度摘要。
-- approval request 和用户选择。
-- interrupt / resume。
-- 错误和异常断连。
+Mac 默认路径：
 
-审计日志默认不保存完整 prompt 和输出内容。
+```text
+~/.codebuddy-remote/history/<workspace>-<sha256(cwd).前16位>.jsonl
+~/.codebuddy-remote/devices.json
+~/.codebuddy-remote/audit/<workspace>-<sha256(cwd).前16位>.jsonl
+```
 
-## 已探索结论简化
+可通过环境变量覆盖：
 
-### CLI
+```sh
+CODEBUDDY_REMOTE_HISTORY_FILE=/path/to/events.jsonl
+CODEBUDDY_REMOTE_DEVICE_STORE_FILE=/path/to/devices.json
+CODEBUDDY_REMOTE_AUDIT_FILE=/path/to/audit.jsonl
+```
 
-结论：适合作为第一阶段主线。
+iOS 默认持久化：
 
-已发现能力线索：
+- Relay 配置、workspace、host 和聊天展示缓存：`AppStorage`。
+- device secret：Keychain。
 
-- `--serve`
-- `--session-id`
-- `--resume` / `--continue`
-- `--bg` / `--background`
-- `ps` / `logs` / `attach` / `kill`
-- `--remote-control`
-- `--input-format stream-json`
-- `--output-format stream-json`
+## 和历史方案的差异
 
-下一步重点不是继续列 flag，而是做真实行为验收：stream-json schema、permission request 表达、interrupt 方式和 background session 管理。
+已废弃或降级的内容：
 
-### IDE
+- 不再把 Local 直连作为手机端产品模式。
+- 不再保留 Relay 明文 command/event/response 兼容路径。
+- 不再把 Tunnel / P2P 作为当前推荐链路。
+- 不把 `codebuddy --serve` 作为默认入口；它保留为探索/对照 adapter。
+- 不把 `codebuddy -p` 短进程模式作为产品入口；它只用于测试对照。
+- IDE Bridge 不进入当前 MVP，相关探针和结论只保存在 archive。
 
-结论：产品价值高，但应作为第二阶段风险包。
+保留的探索资产：
 
-已验证：
+- `docs/archive/exploration-summary.md`
+- `docs/archive/tools/`
+- `docs/archive/probes/`
 
-- CodeBuddy IDE 可安装第三方 VS Code 兼容扩展。
-- 扩展能看到并调用 Genie / CodeBuddy command。
-- `tencentcloud.codingcopilot.chat.sendMessage` 可注入 prompt，并返回 conversation id、user message 和 agent running 状态。
-- `getWebviewInfo`、`checkChatRunning`、`isAgentBusy`、`getContext` 可用于状态探测。
+这些材料只用于追溯，不作为当前实现事实来源。
 
-未闭环：
+## 后续 Backlog
 
-- assistant stream。
-- tool call / diff / terminal log stream。
-- permission request event。
-- approval/rejection 稳定 API。
-- IDE restart / reload 后恢复。
+这些事项不影响当前 Relay-only MVP 成立。进入实现前，需要重新确认目标、验收标准和测试范围。
 
-### 探针扩展
+### P0: 当前实现相邻
 
-结论：只用于验证，不进入正式产品。
+- 历史消息性能回归：用上千条 semantic events 验证滚动、折叠、持久化和恢复。
+- Markdown 展示优化：继续补齐 code block、table、tree 输出等高频展示场景。
 
-当前探针暴露：
+### P1: 协议产品化
 
-- `GET /health`
-- `GET /probe`
-- `GET /commands`
-- `GET|POST /exec`
+- 真实 permission 结构化：把 CodeBuddy CLI 的 permission request 稳定映射为 `tool.permissionRequested`。
+- 结构化审批命令：在真实 permission 行为稳定后，再实现 `approveTool` / `rejectTool`；在此之前继续使用受限的 `sendTerminalInput` 控制键。
+- `openInDesktop`：明确安全边界、可用场景和失败行为后再开放。
 
-正式 Bridge 必须删除通用 `/exec`，替换成白名单 API。
+### P2: 运维增强
 
-## 主要风险与处理
+- Relay 观测指标：只记录连接数、错误数、frame 尺寸和频率，不记录正文。
+- 公网部署模板：补充 Caddy / Nginx / Cloudflare Tunnel 的 `wss://` 示例。
+- Relay 设备持久化评估：当前设备登记主要依赖 Mac 本地设备库，是否需要 Relay 侧跨 host 持久化另行决策。
 
-| 风险 | 影响 | 处理 |
-| --- | --- | --- |
-| IDE 事件订阅拿不到 | 手机无法实时展示 IDE 回复和工具状态 | M3 前置验证，失败则 IDE 降级 |
-| IDE 审批 API 不公开 | 手机无法审批 IDE 工具调用 | CLI 先闭环；IDE 争取官方 API 或产品侧小改 |
-| Relay 边界不清 | 远程控制变成本地执行入口 | 配对、E2E、白名单、审计、可撤销 |
-| 会话绑定错误 | prompt 发到错误 workspace/session | session registry、workspace fingerprint、用户确认 |
-| 断线重连丢事件 | 手机状态与本地不一致 | event seq、ring buffer、state snapshot |
-| 内部 command 变更 | IDE Bridge 版本脆弱 | capability probe、版本矩阵、降级策略 |
+## 验收清单
 
-## 最终建议
+- 在目标目录执行 `codebuddy-remote` 后，本地终端出现真实 CodeBuddy CLI。
+- iOS 扫码后能连接对应 workspace 和 host。
+- iOS prompt 会进入同一个长期驻留 CLI session。
+- iOS 能收到 assistant、tool、diff、terminal、state 等 normalized events。
+- 工具/思考过程完成后默认折叠，手动可展开。
+- 断线或重启后，iOS 可通过 `listEvents` 回放历史 semantic events。
+- Pairing URL 只包含 Relay 模式。
+- iOS 拒绝 Local 旧二维码。
+- Relay 明文 payload 被拒绝。
+- Relay frame 中不出现 prompt 或 terminal output 明文。
+- 设备 HMAC 重连可用，重复 nonce 被拒绝。
+- Mac 可导出 audit log。
 
-立即推进 M1/M2。
+## 相关文档
 
-原因：
-
-- CLI 路线最快验证产品价值。
-- 安全、配对、Relay、移动端 UX 可以先完整闭环。
-- IDE prompt 注入已经验证，后续重点是事件订阅和审批，不应阻塞 MVP。
-
-判断标准：
-
-- M1/M2 成功：产品方向具备可用 MVP。
-- M3 成功：IDE 远程控制可产品化。
-- M3 失败：保留 CLI Remote Control 为主产品，IDE 只做轻量 prompt bridge。
-
-## 当前实现状态
-
-已完成 M1 骨架：
-
-- `packages/protocol/`：统一 command/event 协议工具。
-- `apps/local-host/`：Local Host HTTP/SSE 服务。
-- `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端。
-- `tests/`：协议、session、prompt、event、interrupt/resume 和鉴权测试。
-- `TerminalCliAdapter`：通过 macOS 伪终端启动真实 `codebuddy` CLI，本地终端保留 CodeBuddy 原生界面和键盘交互，手机 prompt 写入同一个终端 session。
-- `ServeCliAdapter`：保留为探索/对照路径，通过 `codebuddy --serve` + ACP HTTP 接口接入 CodeBuddy session，但不作为默认入口。
-- `RealCliAdapter`：保留为短进程对照路径，通过 `codebuddy -p --output-format stream-json --max-turns 1` 接入真实 CodeBuddy CLI。
-
-当前 `codebuddy-remote` 默认接入 `TerminalCliAdapter`。用户在目标项目目录执行 `codebuddy-remote` 后，当前终端会进入真实 CodeBuddy CLI；iOS App 通过 Local Host 或 Relay 发送 prompt，并通过 `terminal.output` 事件查看终端输出。
-
-`server.mjs` 仍可用于开发调试：默认 mock adapter；设置 `CODEBUDDY_REMOTE_ADAPTER=real` 可切换短进程 `RealCliAdapter`；设置 `CODEBUDDY_REMOTE_ADAPTER=serve` 可切换 ACP `ServeCliAdapter`。
-
-真实验证结论：
-
-- `codebuddy --serve` 前台输出不是用户熟悉的聊天 TUI，且会把 ACP/JSON 更新吐到终端，因此不适合作为默认“像直接运行 codebuddy”的入口。
-- 伪终端方案能保持真实 `codebuddy` CLI 前台界面，并允许手机端把 prompt 注入同一个终端 session。
-- `TerminalCliAdapter` 当前按终端输出流推送 `terminal.output`，不伪造结构化 `assistant.delta`。
-
-下一步需要继续验证 permission request、approval/rejection、终端输出分段展示和手机端 interrupt 对真实 CodeBuddy TUI 的行为。
+- `README.md`：运行方式和目录说明。
+- `docs/security-and-pairing-flow.md`：安全设计与登录流程。
+- `docs/archive/README.md`：探索资料入口。
