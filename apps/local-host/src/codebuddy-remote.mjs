@@ -140,7 +140,6 @@ export async function main() {
       workspace: config.cwd,
       source: "codebuddy-remote",
     },
-    e2e: true,
   });
 
   const server = await host.listen(config.port);

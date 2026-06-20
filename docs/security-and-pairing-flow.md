@@ -17,7 +17,7 @@ CodeBuddy Remote 的安全目标是让手机可以控制本地 CodeBuddy session
 ## 术语
 
 - Local Host：`codebuddy-remote` 启动的本地 HTTP/SSE 控制面，只供 Mac 端内部 adapter、测试和管理 API 使用。
-- Relay：公网或内网中转服务，只转发应用层 `encrypted` / `command` / `event` / `response` payload。
+- Relay：公网或内网中转服务，只转发应用层 `encrypted` payload。
 - Relay Token：Mac host 注册 Relay 时使用的服务端 token，不进入扫码 Pairing URL。
 - Device Credential：iOS App 生成的 `deviceId + deviceSecret`，用于 Relay 设备登记、HMAC 重连和本地持久身份。
 - Pairing URL：`cbr://pair?...`，由 Mac 端二维码承载，短期有效。
@@ -56,7 +56,6 @@ CODEBUDDY_RELAY_TOKEN=<relay-token> npm run start:relay
 Relay 只接受 CodeBuddyRemote 协议 payload：
 
 - `encrypted`，正式 Mac/iOS 通道使用，内部封装加密后的 `command` / `event` / `response`
-- `command` / `event` / `response`，兼容测试和老客户端路径
 
 Relay 不提供任意 TCP 转发，也不暴露 Mac 的 Local HTTP 端口。
 
@@ -203,15 +202,13 @@ P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305
 ## 已知缺口
 
 - Relay 仍可看到路由元数据，例如 pairing code、host/client 连接状态和 encrypted frame 尺寸/频率；正式 Mac/iOS 通道的 payload 正文已加密。
-- Relay 明文 `command` / `event` / `response` 路径仍保留用于兼容测试和老客户端；生产使用应走当前 Mac/iOS E2E 通道。
 - 安全审计日志已有独立文件和导出 API，但还没有独立可视化页面。
 - Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
 
 ## 下一步安全任务
 
-1. 评估是否移除 Relay 明文兼容路径，或增加配置项强制 Relay 只允许 `encrypted` payload。
-2. 为审计日志增加独立可视化页面。
-3. 为设备管理增加 iOS 侧查看入口。
+1. 为审计日志增加独立可视化页面。
+2. 为设备管理增加 iOS 侧查看入口。
 
 ## 验收清单
 
@@ -222,5 +219,6 @@ P-256 KeyAgreement -> HKDF-SHA256 -> ChaCha20-Poly1305
 - 同一个 Relay pairing code 不能被两个 client 复用。
 - Relay 设备登记后可用 HMAC 重新加入，且同一 join nonce 不能重放。
 - 正式 Mac/iOS Relay 通道的 command/response/event 以 `encrypted` payload 转发，Relay frame 中不出现 prompt、terminal output 或 response 正文。
+- Relay 明文 `command` / `event` / `response` payload 会被拒绝。
 - iOS 重启后仍能从 Keychain 读取设备凭证。
 - Mac 删除 `devices.json` 后，iOS 需要重新扫码绑定。

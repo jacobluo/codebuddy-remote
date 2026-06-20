@@ -2,11 +2,6 @@ import crypto from "node:crypto";
 import http from "node:http";
 
 import { WebSocket, WebSocketServer } from "ws";
-import {
-  validateCommand,
-  validateEvent,
-} from "../../../packages/protocol/src/index.mjs";
-
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -316,18 +311,6 @@ export function createRelayServer({
 
 function validateRelayPayload(payload) {
   assertObject(payload, "frame.payload");
-  if (payload.type === "command") {
-    validateCommand(payload);
-    return;
-  }
-  if (payload.type === "event") {
-    validateEvent(payload);
-    return;
-  }
-  if (payload.type === "response") {
-    if (!payload.requestId) throw new Error("response.requestId is required");
-    return;
-  }
   if (payload.type === "encrypted") {
     validateEncryptedPayload(payload);
     return;

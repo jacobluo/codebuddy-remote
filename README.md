@@ -220,7 +220,7 @@ xcrun simctl openurl booted 'cbr://pair?...'
 
 也可以在 App 的连接设置里把 `Pairing URL` 粘贴到 `粘贴 Pairing URL` 输入框。
 
-Relay 只接受 CodeBuddyRemote 应用层 payload：正式 Mac/iOS 通道会把 `command`、`event`、`response` 封装进 E2E `encrypted` 信封，Relay 只看到路由信息和密文；兼容调试路径仍支持明文 `command`、`event`、`response`。Relay 不暴露本地 HTTP 端口，也不提供任意 TCP 转发。手机端的终端输入也被限制为单个审批控制键，例如 `1` / `2` / `3`，不能通过该接口发送任意 shell 文本。
+Relay 只接受 CodeBuddyRemote E2E `encrypted` 应用层 payload：Mac/iOS 通道会把 `command`、`event`、`response` 封装进加密信封，Relay 只看到路由信息和密文。Relay 不暴露本地 HTTP 端口，也不提供任意 TCP 转发。手机端的终端输入也被限制为单个审批控制键，例如 `1` / `2` / `3`，不能通过该接口发送任意 shell 文本。
 
 ## iOS App
 

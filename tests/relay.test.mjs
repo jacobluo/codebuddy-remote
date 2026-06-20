@@ -48,9 +48,7 @@ test("relay pairs a host and client, then forwards command responses", async () 
 
       try {
         await sleep(50);
-        await waitForOpen(phone);
-        phone.send(JSON.stringify({ type: "client.join", pairingCode: "TEST123" }));
-        const joined = await readUntil(phone, (frame) => frame.type === "client.joined");
+        const { peer: phonePeer, joined } = await joinE2EPhone(phone, "TEST123");
         assert.equal(joined.pairingCode, "TEST123");
         assert.equal(joined.meta.workspace, "mock-workspace");
 
@@ -59,15 +57,17 @@ test("relay pairs a host and client, then forwards command responses", async () 
           name: "listSessions",
           payload: {},
         });
-        phone.send(JSON.stringify({ type: "frame", payload: command }));
+        phone.send(JSON.stringify({ type: "frame", payload: phonePeer.encryptPayload(command) }));
 
-        const response = await readUntil(
+        const encryptedResponse = await readUntil(
           phone,
-          (frame) => frame.type === "frame" && frame.payload?.type === "response"
+          (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
         );
-        assert.equal(response.payload.requestId, command.id);
-        assert.equal(response.payload.ok, true);
-        assert.equal(response.payload.body.sessions[0].id, "mock-session");
+        assert.equal(JSON.stringify(encryptedResponse).includes("mock-session"), false);
+        const response = phonePeer.decryptPayload(encryptedResponse.payload);
+        assert.equal(response.requestId, command.id);
+        assert.equal(response.ok, true);
+        assert.equal(response.body.sessions[0].id, "mock-session");
       } finally {
         phone.close();
         relayClient.close();
@@ -103,6 +103,37 @@ test("relay rejects non CodeBuddyRemote protocol payloads", async () => {
   });
 });
 
+test("relay rejects plaintext command payloads", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    const host = new WebSocket(relayUrl);
+    const phone = new WebSocket(relayUrl);
+
+    try {
+      await waitForOpen(host);
+      host.send(JSON.stringify({ type: "host.register", pairingCode: "PLAIN1" }));
+      await readUntil(host, (frame) => frame.type === "host.registered");
+
+      await waitForOpen(phone);
+      phone.send(JSON.stringify({ type: "client.join", pairingCode: "PLAIN1" }));
+      await readUntil(phone, (frame) => frame.type === "client.joined");
+
+      phone.send(JSON.stringify({
+        type: "frame",
+        payload: createCommand({
+          sessionId: "local-host",
+          name: "listSessions",
+          payload: {},
+        }),
+      }));
+      const error = await readUntil(phone, (frame) => frame.type === "error");
+      assert.match(error.error, /unsupported relay payload/);
+    } finally {
+      host.close();
+      phone.close();
+    }
+  });
+});
+
 test("relay keeps server token on the host channel and uses pairing secret for clients", async () => {
   await withRelay(async ({ relayUrl }) => {
     const host = new WebSocket(relayUrl);
@@ -119,11 +150,16 @@ test("relay keeps server token on the host channel and uses pairing secret for c
       const unauthorized = await readUntil(host, (frame) => frame.type === "error");
       assert.match(unauthorized.error, /unauthorized relay token/);
 
+      const hostPeer = createRelayE2EPeer({ role: "host", pairingCode: "TOKEN1" });
       host.send(JSON.stringify({
         type: "host.register",
         pairingCode: "TOKEN1",
         pairingSecret: "pair-secret-12345",
         token: "relay-secret",
+        e2e: {
+          version: 1,
+          publicKey: hostPeer.publicKey,
+        },
       }));
       await readUntil(host, (frame) => frame.type === "host.registered");
 
@@ -136,25 +172,25 @@ test("relay keeps server token on the host channel and uses pairing secret for c
       const rejectedJoin = await readUntil(intruder, (frame) => frame.type === "error");
       assert.match(rejectedJoin.error, /pairing unavailable/);
 
-      await waitForOpen(phone);
-      phone.send(JSON.stringify({
-        type: "client.join",
-        pairingCode: "TOKEN1",
+      const { peer: phonePeer } = await joinE2EPhone(phone, "TOKEN1", {
         pairingSecret: "pair-secret-12345",
-      }));
-      await readUntil(phone, (frame) => frame.type === "client.joined");
+      });
+      await acceptE2EClientOnHost(host, hostPeer);
 
       const command = createCommand({
         sessionId: "local-host",
         name: "listSessions",
         payload: {},
       });
-      phone.send(JSON.stringify({ type: "frame", payload: command }));
+      phone.send(JSON.stringify({ type: "frame", payload: phonePeer.encryptPayload(command) }));
       const forwarded = await readUntil(
         host,
-        (frame) => frame.type === "frame" && frame.payload?.id === command.id
+        (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
       );
-      assert.equal(forwarded.payload.name, "listSessions");
+      assert.equal(JSON.stringify(forwarded).includes("listSessions"), false);
+      const forwardedCommand = hostPeer.decryptPayload(forwarded.payload);
+      assert.equal(forwardedCommand.id, command.id);
+      assert.equal(forwardedCommand.name, "listSessions");
     } finally {
       host.close();
       phone.close();
@@ -217,47 +253,45 @@ test("relay keeps joined clients attached when a host reconnects", async () => {
     const oldHost = new WebSocket(relayUrl);
     const newHost = new WebSocket(relayUrl);
     const phone = new WebSocket(relayUrl);
+    const hostPeer = createRelayE2EPeer({ role: "host", pairingCode: "SWAP1" });
 
     try {
-      await waitForOpen(oldHost);
-      oldHost.send(JSON.stringify({ type: "host.register", pairingCode: "SWAP1" }));
-      await readUntil(oldHost, (frame) => frame.type === "host.registered");
+      await registerE2EHost(oldHost, "SWAP1", { peer: hostPeer });
 
-      await waitForOpen(phone);
-      phone.send(JSON.stringify({ type: "client.join", pairingCode: "SWAP1" }));
-      await readUntil(phone, (frame) => frame.type === "client.joined");
+      const { peer: phonePeer } = await joinE2EPhone(phone, "SWAP1");
+      await acceptE2EClientOnHost(oldHost, hostPeer);
 
-      await waitForOpen(newHost);
-      newHost.send(JSON.stringify({ type: "host.register", pairingCode: "SWAP1" }));
-      await readUntil(newHost, (frame) => frame.type === "host.registered");
+      await registerE2EHost(newHost, "SWAP1", { peer: hostPeer });
 
       const command = createCommand({
         sessionId: "local-host",
         name: "listSessions",
         payload: {},
       });
-      phone.send(JSON.stringify({ type: "frame", payload: command }));
+      phone.send(JSON.stringify({ type: "frame", payload: phonePeer.encryptPayload(command) }));
 
       const forwarded = await readUntil(
         newHost,
-        (frame) => frame.type === "frame" && frame.payload?.id === command.id
+        (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
       );
-      assert.equal(forwarded.payload.name, "listSessions");
+      const forwardedCommand = hostPeer.decryptPayload(forwarded.payload);
+      assert.equal(forwardedCommand.id, command.id);
+      assert.equal(forwardedCommand.name, "listSessions");
 
       newHost.send(JSON.stringify({
         type: "frame",
-        payload: {
+        payload: hostPeer.encryptPayload({
           type: "response",
           requestId: command.id,
           ok: true,
           body: { sessions: [] },
-        },
+        }),
       }));
       const response = await readUntil(
         phone,
-        (frame) => frame.type === "frame" && frame.payload?.requestId === command.id
+        (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
       );
-      assert.equal(response.payload.ok, true);
+      assert.equal(phonePeer.decryptPayload(response.payload).ok, true);
     } finally {
       oldHost.close();
       newHost.close();
@@ -286,24 +320,24 @@ test("relay client can backfill host events after joining", async () => {
         });
 
         await sleep(50);
-        await waitForOpen(phone);
-        phone.send(JSON.stringify({ type: "client.join", pairingCode: "BACKFILL1" }));
-        await readUntil(phone, (frame) => frame.type === "client.joined");
+        const { peer: phonePeer } = await joinE2EPhone(phone, "BACKFILL1");
 
         const command = createCommand({
           sessionId: "local-host",
           name: "listEvents",
           payload: { after: 0 },
         });
-        phone.send(JSON.stringify({ type: "frame", payload: command }));
+        phone.send(JSON.stringify({ type: "frame", payload: phonePeer.encryptPayload(command) }));
 
-        const response = await readUntil(
+        const encryptedResponse = await readUntil(
           phone,
-          (frame) => frame.type === "frame" && frame.payload?.requestId === command.id
+          (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
         );
-        assert.equal(response.payload.ok, true);
-        assert.equal(response.payload.body.latestSeq, 1);
-        assert.equal(response.payload.body.events[0].payload.text, "already rendered");
+        assert.equal(JSON.stringify(encryptedResponse).includes("already rendered"), false);
+        const response = phonePeer.decryptPayload(encryptedResponse.payload);
+        assert.equal(response.ok, true);
+        assert.equal(response.body.latestSeq, 1);
+        assert.equal(response.body.events[0].payload.text, "already rendered");
       } finally {
         phone.close();
         relayClient.close();
@@ -338,7 +372,6 @@ test("relay forwards encrypted e2e command responses", async () => {
         host,
         pairingCode: "E2E123",
         meta: { workspace: "mock-workspace" },
-        e2e: true,
       });
       const phone = new WebSocket(relayUrl);
       const phonePeer = createRelayE2EPeer({ role: "client", pairingCode: "E2E123" });
@@ -471,6 +504,53 @@ function waitForOpen(ws) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function registerE2EHost(ws, pairingCode, {
+  pairingSecret,
+  token,
+  peer = createRelayE2EPeer({ role: "host", pairingCode }),
+} = {}) {
+  await waitForOpen(ws);
+  ws.send(JSON.stringify({
+    type: "host.register",
+    pairingCode,
+    pairingSecret,
+    token,
+    e2e: {
+      version: 1,
+      publicKey: peer.publicKey,
+    },
+  }));
+  const registered = await readUntil(ws, (frame) => frame.type === "host.registered");
+  return { peer, registered };
+}
+
+async function joinE2EPhone(ws, pairingCode, {
+  pairingSecret,
+  peer = createRelayE2EPeer({ role: "client", pairingCode }),
+} = {}) {
+  await waitForOpen(ws);
+  ws.send(JSON.stringify({
+    type: "client.join",
+    pairingCode,
+    pairingSecret,
+    e2e: {
+      version: 1,
+      publicKey: peer.publicKey,
+    },
+  }));
+  const joined = await readUntil(ws, (frame) => frame.type === "client.joined");
+  assert.equal(joined.e2e.version, 1);
+  peer.deriveSession(joined.e2e.publicKey);
+  return { peer, joined };
+}
+
+async function acceptE2EClientOnHost(ws, peer) {
+  const joined = await readUntil(ws, (frame) => frame.type === "client.joined");
+  assert.equal(joined.e2e.version, 1);
+  peer.deriveSession(joined.e2e.publicKey);
+  return joined;
 }
 
 function readUntil(ws, predicate) {
