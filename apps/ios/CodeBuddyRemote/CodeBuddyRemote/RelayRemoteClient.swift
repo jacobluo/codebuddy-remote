@@ -27,6 +27,7 @@ enum RelayClientError: LocalizedError {
 final class RelayRemoteClient {
   private let config: RelayConfig
   private let deviceCredential: DeviceCredential?
+  private let e2eEnabled: Bool
   private let session: URLSession
   private var task: URLSessionWebSocketTask?
   private var receiveTask: Task<Void, Never>?
@@ -34,10 +35,17 @@ final class RelayRemoteClient {
   private var eventBacklog: [RemoteEvent] = []
   private var joinContinuation: CheckedContinuation<Void, Error>?
   private var pendingResponses: [String: (Result<Data, Error>) -> Void] = [:]
+  private var e2ePeer: RelayE2EPeer?
 
-  init(config: RelayConfig, deviceCredential: DeviceCredential? = nil, session: URLSession = .shared) {
+  init(
+    config: RelayConfig,
+    deviceCredential: DeviceCredential? = nil,
+    e2eEnabled: Bool = true,
+    session: URLSession = .shared
+  ) {
     self.config = config
     self.deviceCredential = deviceCredential
+    self.e2eEnabled = e2eEnabled
     self.session = session
   }
 
@@ -51,6 +59,7 @@ final class RelayRemoteClient {
     }
 
     task?.cancel(with: .goingAway, reason: nil)
+    e2ePeer = e2eEnabled ? RelayE2EPeer(role: .client, pairingCode: pairingCode) : nil
     let socket = session.webSocketTask(with: url)
     task = socket
     socket.resume()
@@ -68,6 +77,12 @@ final class RelayRemoteClient {
             "pairingCode": pairingCode,
             "pairingSecret": config.pairingSecret,
           ]
+          if let e2ePeer {
+            joinFrame["e2e"] = [
+              "version": e2ePeer.version,
+              "publicKey": e2ePeer.publicKey,
+            ]
+          }
           if let deviceCredential {
             let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
             let nonce = UUID().uuidString
@@ -95,6 +110,7 @@ final class RelayRemoteClient {
     receiveTask = nil
     task?.cancel(with: .goingAway, reason: nil)
     task = nil
+    e2ePeer = nil
     eventContinuation?.finish()
     eventContinuation = nil
     eventBacklog.removeAll()
@@ -209,7 +225,7 @@ final class RelayRemoteClient {
         do {
           try await send([
             "type": "frame",
-            "payload": command,
+            "payload": encodeRelayPayload(command),
           ])
         } catch {
           let respond = pendingResponses.removeValue(forKey: commandId)
@@ -258,6 +274,12 @@ final class RelayRemoteClient {
 
     switch type {
     case "client.joined":
+      if
+        let e2e = root["e2e"] as? [String: Any],
+        let publicKey = e2e["publicKey"] as? String
+      {
+        try e2ePeer?.deriveSession(peerPublicKey: publicKey)
+      }
       resumeJoin()
     case "error":
       let message = root["error"] as? String ?? "Relay 返回错误"
@@ -270,7 +292,11 @@ final class RelayRemoteClient {
   }
 
   private func handlePayload(_ value: Any?) throws {
-    guard let payload = value as? [String: Any], let type = payload["type"] as? String else {
+    guard let relayPayload = value as? [String: Any] else {
+      throw RelayClientError.malformedFrame
+    }
+    let payload = try decodeRelayPayload(relayPayload)
+    guard let type = payload["type"] as? String else {
       throw RelayClientError.malformedFrame
     }
 
@@ -301,6 +327,21 @@ final class RelayRemoteClient {
       let body = payload["body"] as? [String: Any] ?? [:]
       respond?(.success(try JSONSerialization.data(withJSONObject: body)))
     }
+  }
+
+  private func encodeRelayPayload(_ payload: [String: Any]) throws -> [String: Any] {
+    guard let e2ePeer else { return payload }
+    return try e2ePeer.encryptPayload(payload)
+  }
+
+  private func decodeRelayPayload(_ payload: [String: Any]) throws -> [String: Any] {
+    if payload["type"] as? String == "encrypted" {
+      guard let e2ePeer else {
+        throw RelayClientError.malformedFrame
+      }
+      return try e2ePeer.decryptPayload(payload)
+    }
+    return payload
   }
 
   private func send(_ dictionary: [String: Any]) async throws {

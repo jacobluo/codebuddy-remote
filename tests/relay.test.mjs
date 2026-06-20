@@ -5,6 +5,7 @@ import test from "node:test";
 import { WebSocket } from "ws";
 
 import { createLocalHost } from "../apps/local-host/src/local-host.mjs";
+import { createRelayE2EPeer } from "../apps/local-host/src/relay-e2e.mjs";
 import { connectRelay } from "../apps/local-host/src/relay-client.mjs";
 import { MockCliAdapter } from "../apps/local-host/src/mock-cli-adapter.mjs";
 import { createRelayServer } from "../apps/relay/src/relay.mjs";
@@ -303,6 +304,81 @@ test("relay client can backfill host events after joining", async () => {
         assert.equal(response.payload.ok, true);
         assert.equal(response.payload.body.latestSeq, 1);
         assert.equal(response.payload.body.events[0].payload.text, "already rendered");
+      } finally {
+        phone.close();
+        relayClient.close();
+      }
+    });
+  });
+});
+
+test("relay e2e encrypts payloads without exposing plaintext to the relay", () => {
+  const hostPeer = createRelayE2EPeer({ role: "host", pairingCode: "E2E1" });
+  const clientPeer = createRelayE2EPeer({ role: "client", pairingCode: "E2E1" });
+  hostPeer.deriveSession(clientPeer.publicKey);
+  clientPeer.deriveSession(hostPeer.publicKey);
+
+  const command = createCommand({
+    sessionId: "local-host",
+    name: "listSessions",
+    payload: {},
+  });
+  const encrypted = clientPeer.encryptPayload(command);
+
+  assert.equal(encrypted.type, "encrypted");
+  assert.equal(JSON.stringify(encrypted).includes("listSessions"), false);
+  assert.deepEqual(hostPeer.decryptPayload(encrypted), command);
+});
+
+test("relay forwards encrypted e2e command responses", async () => {
+  await withRelay(async ({ relayUrl }) => {
+    await withLocalHost(async ({ host }) => {
+      const relayClient = connectRelay({
+        relayUrl,
+        host,
+        pairingCode: "E2E123",
+        meta: { workspace: "mock-workspace" },
+        e2e: true,
+      });
+      const phone = new WebSocket(relayUrl);
+      const phonePeer = createRelayE2EPeer({ role: "client", pairingCode: "E2E123" });
+
+      try {
+        await sleep(50);
+        await waitForOpen(phone);
+        phone.send(JSON.stringify({
+          type: "client.join",
+          pairingCode: "E2E123",
+          e2e: {
+            version: 1,
+            publicKey: phonePeer.publicKey,
+          },
+        }));
+        const joined = await readUntil(phone, (frame) => frame.type === "client.joined");
+        assert.equal(joined.e2e.version, 1);
+        phonePeer.deriveSession(joined.e2e.publicKey);
+
+        const command = createCommand({
+          sessionId: "local-host",
+          name: "listSessions",
+          payload: {},
+        });
+        phone.send(JSON.stringify({
+          type: "frame",
+          payload: phonePeer.encryptPayload(command),
+        }));
+
+        const encryptedResponse = await readUntil(
+          phone,
+          (frame) => frame.type === "frame" && frame.payload?.type === "encrypted"
+        );
+        assert.equal(JSON.stringify(encryptedResponse).includes("mock-session"), false);
+
+        const response = phonePeer.decryptPayload(encryptedResponse.payload);
+        assert.equal(response.type, "response");
+        assert.equal(response.requestId, command.id);
+        assert.equal(response.ok, true);
+        assert.equal(response.body.sessions[0].id, "mock-session");
       } finally {
         phone.close();
         relayClient.close();

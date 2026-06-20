@@ -127,6 +127,7 @@ export function createRelayServer({
       hostId: frame.hostId || `host_${crypto.randomUUID()}`,
       pairingCode,
       pairingSecretHash: pairingSecret ? hashPairingSecret(pairingSecret) : "",
+      e2e: sanitizeRelayE2E(frame.e2e),
       devices,
       usedDeviceNonces,
       meta: frame.meta || {},
@@ -203,11 +204,13 @@ export function createRelayServer({
       pairingCode,
       pairingExpiresAt: host.expiresAt,
       meta: host.meta,
+      e2e: host.e2e,
     });
     send(host.ws, {
       type: "client.joined",
       clientId: client.clientId,
       pairingCode,
+      e2e: sanitizeRelayE2E(frame.e2e),
     });
   }
 
@@ -325,7 +328,27 @@ function validateRelayPayload(payload) {
     if (!payload.requestId) throw new Error("response.requestId is required");
     return;
   }
+  if (payload.type === "encrypted") {
+    validateEncryptedPayload(payload);
+    return;
+  }
   throw new Error(`unsupported relay payload: ${payload.type}`);
+}
+
+function validateEncryptedPayload(payload) {
+  if (payload.version !== 1) throw new Error("encrypted.version must be 1");
+  if (payload.alg !== "P256-HKDF-SHA256-CHACHA20-POLY1305") {
+    throw new Error("encrypted.alg is unsupported");
+  }
+  if (!Number.isSafeInteger(payload.seq) || payload.seq < 1) {
+    throw new Error("encrypted.seq is required");
+  }
+  if (typeof payload.nonce !== "string" || !payload.nonce) {
+    throw new Error("encrypted.nonce is required");
+  }
+  if (typeof payload.ciphertext !== "string" || !payload.ciphertext) {
+    throw new Error("encrypted.ciphertext is required");
+  }
 }
 
 function parseJson(data) {
@@ -369,6 +392,21 @@ function assertObject(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
+}
+
+function sanitizeRelayE2E(value) {
+  if (value === undefined || value === null) return undefined;
+  assertObject(value, "e2e");
+  if (value.version !== 1) throw new Error("e2e.version must be 1");
+  const publicKey = String(value.publicKey || "").trim();
+  if (!/^[a-zA-Z0-9_-]{80,128}$/.test(publicKey)) {
+    throw new Error("e2e.publicKey is invalid");
+  }
+  return {
+    version: 1,
+    alg: "P256-HKDF-SHA256-CHACHA20-POLY1305",
+    publicKey,
+  };
 }
 
 function isAuthorizedToken(provided, expected) {

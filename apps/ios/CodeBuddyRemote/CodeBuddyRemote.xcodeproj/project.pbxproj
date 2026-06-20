@@ -20,6 +20,7 @@
 		111111111111111111111112 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111014 /* QRCodeScannerView.swift */; };
 		111111111111111111111113 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111015 /* AppState.swift */; };
 		111111111111111111111114 /* DeviceCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111016 /* DeviceCredential.swift */; };
+		111111111111111111111115 /* RelayE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111017 /* RelayE2E.swift */; };
 		222222222222222222222101 /* ChatModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222001 /* ChatModelsTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -50,6 +51,7 @@
 		111111111111111111111014 /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
 		111111111111111111111015 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		111111111111111111111016 /* DeviceCredential.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCredential.swift; sourceTree = "<group>"; };
+		111111111111111111111017 /* RelayE2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayE2E.swift; sourceTree = "<group>"; };
 		222222222222222222222001 /* ChatModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelsTests.swift; sourceTree = "<group>"; };
 		222222222222222222222002 /* CodeBuddyRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodeBuddyRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -98,6 +100,7 @@
 				111111111111111111111014 /* QRCodeScannerView.swift */,
 				111111111111111111111003 /* RemoteClient.swift */,
 				111111111111111111111008 /* RelayRemoteClient.swift */,
+				111111111111111111111017 /* RelayE2E.swift */,
 				111111111111111111111004 /* RemoteModels.swift */,
 				111111111111111111111005 /* TerminalScreen.swift */,
 				111111111111111111111009 /* Info.plist */,
@@ -242,6 +245,7 @@
 				111111111111111111111112 /* QRCodeScannerView.swift in Sources */,
 				111111111111111111111113 /* AppState.swift in Sources */,
 				111111111111111111111114 /* DeviceCredential.swift in Sources */,
+				111111111111111111111115 /* RelayE2E.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

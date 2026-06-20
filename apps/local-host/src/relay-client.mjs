@@ -1,5 +1,7 @@
 import { WebSocket } from "ws";
 
+import { createRelayE2EPeer, isRelayEncryptedPayload } from "./relay-e2e.mjs";
+
 export function connectRelay({
   relayUrl,
   host,
@@ -7,6 +9,7 @@ export function connectRelay({
   pairingSecret = "",
   relayToken = "",
   meta = {},
+  e2e = false,
 }) {
   if (!relayUrl) return null;
 
@@ -14,25 +17,35 @@ export function connectRelay({
   let unsubscribe;
   let closed = false;
   let loggedConnected = false;
+  const e2ePeer = e2e ? createRelayE2EPeer({ role: "host", pairingCode }) : null;
 
   function connect() {
     ws = new WebSocket(relayUrl);
 
     ws.on("open", () => {
-      send({
+      const registerFrame = {
         type: "host.register",
         pairingCode,
         pairingSecret,
         token: relayToken,
         meta,
-      });
+      };
+      if (e2ePeer) {
+        registerFrame.e2e = {
+          version: e2ePeer.version,
+          publicKey: e2ePeer.publicKey,
+        };
+      }
+      send(registerFrame);
       unsubscribe = host.subscribe((event) => {
-        send({ type: "frame", payload: event });
+        sendRelayPayload(event);
       });
     });
 
     ws.on("message", (data) => {
-      void handleMessage(data);
+      void handleMessage(data).catch((error) => {
+        console.error(`[codebuddy-remote] relay message error: ${error.message}`);
+      });
     });
 
     ws.on("close", () => {
@@ -60,39 +73,58 @@ export function connectRelay({
 
     if (frame.type === "client.joined") {
       console.log(`[codebuddy-remote] relay client joined: ${frame.clientId}`);
+      if (e2ePeer && frame.e2e?.publicKey) {
+        e2ePeer.deriveSession(frame.e2e.publicKey);
+        console.log("[codebuddy-remote] relay e2e session established");
+      }
       return;
     }
 
-    if (frame.type !== "frame" || frame.payload?.type !== "command") return;
+    if (frame.type !== "frame") return;
+
+    const payload = decodeRelayPayload(frame.payload);
+    if (payload?.type !== "command") return;
 
     try {
       console.log(
-        `[codebuddy-remote] relay command: ${frame.payload.name} ${frame.payload.id}`
+        `[codebuddy-remote] relay command: ${payload.name} ${payload.id}`
       );
-      const body = await host.handleCommand(frame.payload);
+      const body = await host.handleCommand(payload);
       console.log(
-        `[codebuddy-remote] relay response: ${frame.payload.name} ${frame.payload.id}`
+        `[codebuddy-remote] relay response: ${payload.name} ${payload.id}`
       );
-      send({
-        type: "frame",
-        payload: {
-          type: "response",
-          requestId: frame.payload.id,
-          ok: true,
-          body,
-        },
+      sendRelayPayload({
+        type: "response",
+        requestId: payload.id,
+        ok: true,
+        body,
       });
     } catch (error) {
-      send({
-        type: "frame",
-        payload: {
-          type: "response",
-          requestId: frame.payload.id,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        },
+      sendRelayPayload({
+        type: "response",
+        requestId: payload.id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  function decodeRelayPayload(payload) {
+    if (!e2ePeer) return payload;
+    if (!isRelayEncryptedPayload(payload)) return null;
+    return e2ePeer.decryptPayload(payload);
+  }
+
+  function sendRelayPayload(payload) {
+    if (e2ePeer) {
+      try {
+        send({ type: "frame", payload: e2ePeer.encryptPayload(payload) });
+      } catch {
+        return;
+      }
+      return;
+    }
+    send({ type: "frame", payload });
   }
 
   function send(frame) {

@@ -36,6 +36,29 @@ final class ChatModelsTests: XCTestCase {
     XCTAssertEqual(signature, "218UVy9woW931dZKyDq5GSYA8uem-sO97qy7rrxkG8Q")
   }
 
+  func testRelayE2EEncryptsPayloadsWithoutPlaintext() throws {
+    let hostPeer = RelayE2EPeer(role: .host, pairingCode: "E2E1")
+    let clientPeer = RelayE2EPeer(role: .client, pairingCode: "E2E1")
+    try hostPeer.deriveSession(peerPublicKey: clientPeer.publicKey)
+    try clientPeer.deriveSession(peerPublicKey: hostPeer.publicKey)
+
+    let command: [String: Any] = [
+      "type": "command",
+      "id": "cmd-1",
+      "sessionId": "local-host",
+      "name": "listSessions",
+      "payload": [:],
+    ]
+
+    let encrypted = try clientPeer.encryptPayload(command)
+    let encryptedText = String(data: try JSONSerialization.data(withJSONObject: encrypted), encoding: .utf8)
+    XCTAssertFalse(encryptedText?.contains("listSessions") ?? true)
+
+    let decrypted = try hostPeer.decryptPayload(encrypted)
+    XCTAssertEqual(decrypted["type"] as? String, "command")
+    XCTAssertEqual(decrypted["name"] as? String, "listSessions")
+  }
+
   func testPairingPayloadParsesLocalURL() throws {
     let payload = try PairingPayload.parse(
       "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&bindToken=bind-once&workspace=drink&host=MacBook&expiresAt=2000",

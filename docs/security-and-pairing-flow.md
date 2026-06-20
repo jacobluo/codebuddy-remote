@@ -175,6 +175,7 @@ Relay 只接受 CodeBuddyRemote 协议 payload：
 - `command`
 - `event`
 - `response`
+- `encrypted`，正式 Mac/iOS 通道使用，内部封装加密后的 `command` / `event` / `response`
 
 Relay 不提供任意 TCP 转发，也不暴露 Mac 的 Local HTTP 端口。
 
@@ -278,7 +279,8 @@ iOS App 扫码后：
 - 公网 Relay 要求 token，除非显式设置本机调试开关。
 - Relay token 只用于 Mac host 注册，不进入 iOS 二维码和业务 frame。
 - Relay 支持登记后的设备用 HMAC 重新加入，并对 join nonce 做防重放。
-- Relay payload 做类型白名单校验。
+- 正式 Mac/iOS Relay 通道使用应用层 E2E：`P-256 KeyAgreement + HKDF-SHA256 + ChaCha20-Poly1305`。
+- Relay payload 做类型白名单校验；E2E 模式下 Relay 只校验 `encrypted` 信封结构，不读取内部正文。
 - Local 绑定后支持设备级 HMAC 请求签名。
 - Local 设备签名带 nonce replay cache，同一窗口内重复 nonce 会被拒绝。
 - Local Pairing URL 使用一次性 bind token，绑定成功后立即失效。
@@ -294,15 +296,16 @@ iOS App 扫码后：
 ## 已知缺口
 
 - Local Host 当前是 HTTP，局域网内依赖 HMAC 请求签名保护认证完整性，未提供传输层加密。
-- Relay 设备认证已补齐，但尚未做端到端加密；Relay 仍可看到转发 payload。
+- Relay 仍可看到路由元数据，例如 pairing code、host/client 连接状态和 encrypted frame 尺寸/频率；正式 Mac/iOS 通道的 payload 正文已加密。
+- Relay 明文 `command` / `event` / `response` 路径仍保留用于兼容测试和老客户端；生产使用应走当前 Mac/iOS E2E 通道。
 - 安全审计日志已有独立文件和导出 API，但还没有独立可视化页面。
 - Local Pairing URL 中携带一次性 bind token；Relay Pairing URL 中携带短期 pairing secret。二维码仍需要被视为短期敏感凭证。
 
 ## 下一步安全任务
 
-1. 评估并选择端到端加密方案，让 Relay 只见密文。
-2. 评估 Local 模式 mTLS、Noise、WebSocket over TLS 或局域网 HTTPS 的成本。
-3. 为审计日志增加独立可视化页面。
+1. 评估 Local 模式 mTLS、Noise、WebSocket over TLS 或局域网 HTTPS 的成本。
+2. 为审计日志增加独立可视化页面。
+3. 评估是否移除 Relay 明文兼容路径，或增加配置项强制 Relay 只允许 `encrypted` payload。
 
 ## Local 传输加密评估
 
@@ -317,7 +320,7 @@ iOS App 扫码后：
 - `mTLS`：身份强，但移动端证书生命周期和撤销管理复杂。
 - `Noise / libsodium`：适合应用层 E2E，协议更可控，但需要自己维护握手、密钥轮换和调试工具。
 
-Relay 模式优先考虑应用层 E2E，因为 Relay 不能持有解密能力；Local 模式可继续用 HMAC 做身份/完整性，并在真实分发前决定是否上 TLS。
+Relay 模式已经采用应用层 E2E，因为 Relay 不能持有解密能力；Local 模式可继续用 HMAC 做身份/完整性，并在真实分发前决定是否上 TLS。
 
 ## 验收清单
 
@@ -334,5 +337,6 @@ Relay 模式优先考虑应用层 E2E，因为 Relay 不能持有解密能力；
 - Relay 未配置 token 时不能公网启动。
 - 同一个 Relay pairing code 不能被两个 client 复用。
 - Relay 设备登记后可用 HMAC 重新加入，且同一 join nonce 不能重放。
+- 正式 Mac/iOS Relay 通道的 command/response/event 以 `encrypted` payload 转发，Relay frame 中不出现 prompt、terminal output 或 response 正文。
 - iOS 重启后仍能从 Keychain 读取设备凭证。
 - Mac 删除 `devices.json` 后，iOS 需要重新扫码绑定。
