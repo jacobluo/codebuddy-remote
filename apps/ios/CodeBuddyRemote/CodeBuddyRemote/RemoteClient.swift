@@ -19,6 +19,7 @@ enum RemoteClientError: LocalizedError {
 
 struct RemoteClient {
   var config: RemoteConfig
+  var deviceCredential: DeviceCredential? = nil
   var session: URLSession = .shared
 
   func listSessions() async throws -> [RemoteSession] {
@@ -27,10 +28,10 @@ struct RemoteClient {
   }
 
   func listEvents(after: Int = 0, before: Int = 0, limit: Int = 0) async throws -> EventListResponse {
-    var query = [
-      URLQueryItem(name: "token", value: config.token),
-      URLQueryItem(name: "after", value: String(after)),
-    ]
+    var query = [URLQueryItem(name: "after", value: String(after))]
+    if deviceCredential == nil {
+      query.insert(URLQueryItem(name: "token", value: config.token), at: 0)
+    }
     if before > 0 {
       query.append(URLQueryItem(name: "before", value: String(before)))
     }
@@ -68,16 +69,29 @@ struct RemoteClient {
     )
   }
 
+  func bindDevice(_ credential: DeviceCredential) async throws {
+    let _: DeviceBindResponse = try await post(
+      "/api/devices/bind",
+      body: [
+        "deviceId": credential.deviceId,
+        "deviceSecret": credential.deviceSecret,
+        "deviceName": credential.deviceName,
+      ],
+      forceTokenAuth: true
+    )
+  }
+
   func streamEvents(after: Int = 0) -> AsyncThrowingStream<RemoteEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
         do {
-          let url = try endpoint("/api/events/stream", query: [
-            URLQueryItem(name: "token", value: config.token),
-            URLQueryItem(name: "after", value: String(after)),
-          ])
+          var query = [URLQueryItem(name: "after", value: String(after))]
+          if deviceCredential == nil {
+            query.insert(URLQueryItem(name: "token", value: config.token), at: 0)
+          }
+          let url = try endpoint("/api/events/stream", query: query)
           var request = URLRequest(url: url)
-          request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+          sign(&request, method: "GET", path: "/api/events/stream", body: "")
           let (bytes, response) = try await session.bytes(for: request)
           try validate(response)
 
@@ -107,18 +121,24 @@ struct RemoteClient {
 
   private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
     var request = URLRequest(url: try endpoint(path, query: query))
-    request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+    sign(&request, method: "GET", path: path, body: "")
     let (data, response) = try await session.data(for: request)
     try validate(response)
     return try JSONDecoder().decode(T.self, from: data)
   }
 
-  private func post<T: Decodable>(_ path: String, body: [String: String]) async throws -> T {
+  private func post<T: Decodable>(
+    _ path: String,
+    body: [String: String],
+    forceTokenAuth: Bool = false
+  ) async throws -> T {
     var request = URLRequest(url: try endpoint(path))
     request.httpMethod = "POST"
-    request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONEncoder().encode(body)
+    let bodyData = try JSONEncoder().encode(body)
+    request.httpBody = bodyData
+    let bodyText = String(data: bodyData, encoding: .utf8) ?? ""
+    sign(&request, method: "POST", path: path, body: bodyText, forceTokenAuth: forceTokenAuth)
     let (data, response) = try await session.data(for: request)
     try validate(response)
     return try JSONDecoder().decode(T.self, from: data)
@@ -137,6 +157,35 @@ struct RemoteClient {
       throw RemoteClientError.invalidBaseURL
     }
     return url
+  }
+
+  private func sign(
+    _ request: inout URLRequest,
+    method: String,
+    path: String,
+    body: String,
+    forceTokenAuth: Bool = false
+  ) {
+    guard !forceTokenAuth, let deviceCredential else {
+      request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+      return
+    }
+
+    let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
+    let nonce = UUID().uuidString
+    request.setValue(deviceCredential.deviceId, forHTTPHeaderField: "X-CodeBuddy-Device-Id")
+    request.setValue(timestamp, forHTTPHeaderField: "X-CodeBuddy-Timestamp")
+    request.setValue(nonce, forHTTPHeaderField: "X-CodeBuddy-Nonce")
+    request.setValue(
+      deviceCredential.signature(
+        method: method,
+        path: path,
+        body: body,
+        timestamp: timestamp,
+        nonce: nonce
+      ),
+      forHTTPHeaderField: "X-CodeBuddy-Signature"
+    )
   }
 
   private func validate(_ response: URLResponse) throws {

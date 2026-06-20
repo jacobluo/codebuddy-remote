@@ -1,9 +1,11 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
 
@@ -20,10 +22,18 @@ const JSON_HEADERS = {
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 const TERMINAL_CONTROL_PATTERN = /^[0-9ynqYN]$/;
+const MAX_DEVICE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
-export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFile = "" }) {
+export function createLocalHost({
+  adapter,
+  token,
+  host = "127.0.0.1",
+  historyFile = "",
+  deviceStoreFile = "",
+}) {
   let server;
   const historyStore = createHistoryStore(historyFile);
+  const deviceStore = createDeviceStore(deviceStoreFile);
   let seq = historyStore.latestSeq;
   const events = [...historyStore.events];
   const subscribers = new Set();
@@ -55,8 +65,30 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFil
         return;
       }
 
-      if (!isAuthorized(req, url, token)) {
+      const requestPayload = shouldReadBody(req)
+        ? await readJsonPayload(req)
+        : { body: {}, rawBody: "" };
+      const requestBody = requestPayload.body;
+
+      if (!isAuthorized(req, url, token, deviceStore, requestPayload.rawBody)) {
         sendJson(res, 401, { ok: false, error: "unauthorized" });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/devices/bind") {
+        const device = deviceStore.bind({
+          deviceId: String(requestBody.deviceId || ""),
+          deviceSecret: String(requestBody.deviceSecret || ""),
+          deviceName: String(requestBody.deviceName || "CodeBuddy Remote"),
+        });
+        sendJson(res, 200, {
+          ok: true,
+          device: {
+            deviceId: device.deviceId,
+            deviceName: device.deviceName,
+            createdAt: device.createdAt,
+          },
+        });
         return;
       }
 
@@ -82,7 +114,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFil
       const messageMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
       if (req.method === "POST" && messageMatch) {
         const sessionId = messageMatch[1];
-        const body = await readJson(req);
+        const body = requestBody;
         const text = String(body.text || "").trim();
         if (!text) {
           sendJson(res, 400, { ok: false, error: "text is required" });
@@ -115,7 +147,7 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1", historyFil
       const inputMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/input$/);
       if (req.method === "POST" && inputMatch) {
         const sessionId = inputMatch[1];
-        const body = await readJson(req);
+        const body = requestBody;
         const text = String(body.text || "");
         if (!text) {
           sendJson(res, 400, { ok: false, error: "text is required" });
@@ -330,10 +362,19 @@ function selectEvents(events, { after = 0, before = 0, limit = 0 } = {}) {
   return selected;
 }
 
-function isAuthorized(req, url, token) {
+function isAuthorized(req, url, token, deviceStore, rawBody = "") {
   if (!token) return true;
   if (url.searchParams.get("token") === token) return true;
-  return req.headers.authorization === `Bearer ${token}`;
+  if (req.headers.authorization === `Bearer ${token}`) return true;
+  return deviceStore.verifyRequest({
+    method: req.method || "GET",
+    path: url.pathname,
+    body: rawBody,
+    deviceId: req.headers["x-codebuddy-device-id"],
+    timestamp: req.headers["x-codebuddy-timestamp"],
+    nonce: req.headers["x-codebuddy-nonce"],
+    signature: req.headers["x-codebuddy-signature"],
+  });
 }
 
 function sendJson(res, status, body) {
@@ -341,7 +382,7 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-async function readJson(req) {
+async function readJsonPayload(req) {
   const chunks = [];
   let total = 0;
   for await (const chunk of req) {
@@ -351,8 +392,13 @@ async function readJson(req) {
     }
     chunks.push(chunk);
   }
-  if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (!chunks.length) return { body: {}, rawBody: "" };
+  const rawBody = Buffer.concat(chunks).toString("utf8");
+  return { body: JSON.parse(rawBody), rawBody };
+}
+
+function shouldReadBody(req) {
+  return !["GET", "HEAD"].includes(req.method || "GET");
 }
 
 function writeSse(res, event) {
@@ -426,4 +472,87 @@ function loadHistoryEvents(historyFile) {
 
 function shouldPersistEvent(event) {
   return event.name !== "terminal.output";
+}
+
+function createDeviceStore(deviceStoreFile) {
+  const devices = loadDevices(deviceStoreFile);
+
+  return {
+    bind({ deviceId, deviceSecret, deviceName }) {
+      if (!deviceId) throw new Error("deviceId is required");
+      if (!deviceSecret) throw new Error("deviceSecret is required");
+
+      const now = new Date().toISOString();
+      const existing = devices.find((device) => device.deviceId === deviceId);
+      const device = {
+        deviceId,
+        deviceSecret,
+        deviceName: deviceName || "CodeBuddy Remote",
+        createdAt: existing?.createdAt || now,
+        lastSeenAt: now,
+        revoked: false,
+      };
+
+      if (existing) {
+        Object.assign(existing, device);
+      } else {
+        devices.push(device);
+      }
+      saveDevices(deviceStoreFile, devices);
+      return device;
+    },
+    verifyRequest({ method, path, body, deviceId, timestamp, nonce, signature }) {
+      if (!deviceId || !timestamp || !nonce || !signature) return false;
+      const device = devices.find((item) => item.deviceId === deviceId && !item.revoked);
+      if (!device) return false;
+
+      const requestTime = Number(timestamp);
+      if (!Number.isFinite(requestTime)) return false;
+      if (Math.abs(Date.now() - requestTime) > MAX_DEVICE_CLOCK_SKEW_MS) return false;
+
+      const expected = signDeviceRequest({
+        secret: device.deviceSecret,
+        method,
+        path,
+        body,
+        timestamp,
+        nonce,
+      });
+      if (!timingSafeStringEqual(String(signature), expected)) return false;
+      device.lastSeenAt = new Date().toISOString();
+      saveDevices(deviceStoreFile, devices);
+      return true;
+    },
+  };
+}
+
+function loadDevices(deviceStoreFile) {
+  if (!deviceStoreFile || !existsSync(deviceStoreFile)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(deviceStoreFile, "utf8"));
+    return Array.isArray(parsed.devices) ? parsed.devices : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDevices(deviceStoreFile, devices) {
+  if (!deviceStoreFile) return;
+  mkdirSync(dirname(deviceStoreFile), { recursive: true });
+  const body = `${JSON.stringify({ devices }, null, 2)}\n`;
+  writeFileSync(deviceStoreFile, body, { encoding: "utf8", mode: 0o600 });
+}
+
+function signDeviceRequest({ secret, method, path, body, timestamp, nonce }) {
+  return crypto
+    .createHmac("sha256", secret)
+    .update([method, path, body, timestamp, nonce].join("\n"))
+    .digest("base64url");
+}
+
+function timingSafeStringEqual(actual, expected) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }

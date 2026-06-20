@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -378,3 +379,97 @@ test("terminal input rejects arbitrary text", async () => {
     await host.close();
   }
 });
+
+test("binds a device and accepts signed local API requests", async () => {
+  const deviceDir = await mkdtemp(join(tmpdir(), "codebuddy-remote-devices-"));
+  const deviceStoreFile = join(deviceDir, "devices.json");
+  const adapter = new MockCliAdapter();
+  const host = createLocalHost({
+    adapter,
+    token: "test-token",
+    deviceStoreFile,
+  });
+  const server = await host.listen(0);
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const deviceId = "device-1";
+  const deviceSecret = "secret-1";
+
+  try {
+    const bound = await requestJson(`${baseUrl}/api/devices/bind`, {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId,
+        deviceSecret,
+        deviceName: "iPhone",
+      }),
+    });
+
+    assert.equal(bound.response.status, 200);
+    assert.equal(bound.body.ok, true);
+    assert.equal(bound.body.device.deviceId, deviceId);
+
+    const body = "";
+    const timestamp = String(Date.now());
+    const nonce = "nonce-1";
+    const path = "/api/sessions";
+    const signature = signDeviceRequest({
+      secret: deviceSecret,
+      method: "GET",
+      path,
+      body,
+      timestamp,
+      nonce,
+    });
+    const response = await fetch(`${baseUrl}${path}`, {
+      headers: {
+        "x-codebuddy-device-id": deviceId,
+        "x-codebuddy-timestamp": timestamp,
+        "x-codebuddy-nonce": nonce,
+        "x-codebuddy-signature": signature,
+      },
+    });
+    const sessions = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(sessions.sessions[0].id, "mock-session");
+
+    const promptBody = JSON.stringify({ text: "只回复 OK" });
+    const promptPath = "/api/sessions/mock-session/messages";
+    const promptTimestamp = String(Date.now());
+    const promptNonce = "nonce-2";
+    const promptSignature = signDeviceRequest({
+      secret: deviceSecret,
+      method: "POST",
+      path: promptPath,
+      body: promptBody,
+      timestamp: promptTimestamp,
+      nonce: promptNonce,
+    });
+    const promptResponse = await fetch(`${baseUrl}${promptPath}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-codebuddy-device-id": deviceId,
+        "x-codebuddy-timestamp": promptTimestamp,
+        "x-codebuddy-nonce": promptNonce,
+        "x-codebuddy-signature": promptSignature,
+      },
+      body: promptBody,
+    });
+    const promptResult = await promptResponse.json();
+
+    assert.equal(promptResponse.status, 202);
+    assert.equal(promptResult.command.name, "sendPrompt");
+  } finally {
+    await host.close();
+    await rm(deviceDir, { recursive: true, force: true });
+  }
+});
+
+function signDeviceRequest({ secret, method, path, body, timestamp, nonce }) {
+  return crypto
+    .createHmac("sha256", secret)
+    .update([method, path, body, timestamp, nonce].join("\n"))
+    .digest("base64url");
+}

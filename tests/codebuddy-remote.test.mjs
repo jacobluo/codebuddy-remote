@@ -31,6 +31,7 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
       CODEBUDDY_REMOTE_RELAY_TOKEN: "relay-token",
       CODEBUDDY_REMOTE_PAIRING_CODE: "PAIR123",
       CODEBUDDY_REMOTE_HISTORY_FILE: "/tmp/custom-history.jsonl",
+      CODEBUDDY_REMOTE_DEVICE_STORE_FILE: "/tmp/custom-devices.json",
     },
   });
 
@@ -43,6 +44,7 @@ test("codebuddy-remote creates a run config from the current workspace", () => {
   assert.equal(config.relayToken, "relay-token");
   assert.equal(config.pairingCode, "PAIR123");
   assert.equal(config.historyFile, "/tmp/custom-history.jsonl");
+  assert.equal(config.deviceStoreFile, "/tmp/custom-devices.json");
 });
 
 test("codebuddy-remote derives a stable history file from the workspace", () => {
@@ -56,6 +58,7 @@ test("codebuddy-remote derives a stable history file from the workspace", () => 
     config.historyFile,
     /^\/Users\/robiluo\/\.codebuddy-remote\/history\/drink-[a-f0-9]{16}\.jsonl$/
   );
+  assert.equal(config.deviceStoreFile, "/Users/robiluo/.codebuddy-remote/devices.json");
 });
 
 test("codebuddy-remote configures plain CodeBuddy CLI as an interactive terminal process", () => {

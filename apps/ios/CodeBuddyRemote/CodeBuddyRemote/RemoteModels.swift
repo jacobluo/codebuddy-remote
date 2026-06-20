@@ -65,6 +65,17 @@ struct EventListResponse: Codable {
   let latestSeq: Int
 }
 
+struct DeviceBindResponse: Codable {
+  let ok: Bool
+  let device: BoundDevice
+}
+
+struct BoundDevice: Codable, Equatable {
+  let deviceId: String
+  let deviceName: String
+  let createdAt: String
+}
+
 struct RemoteEvent: Codable, Identifiable, Equatable {
   let id: String
   let sessionId: String

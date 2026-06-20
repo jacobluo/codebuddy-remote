@@ -2,6 +2,24 @@ import XCTest
 @testable import CodeBuddyRemote
 
 final class ChatModelsTests: XCTestCase {
+  func testDeviceCredentialSignatureMatchesHostHMAC() {
+    let credential = DeviceCredential(
+      deviceId: "device-1",
+      deviceSecret: "secret-1",
+      deviceName: "iPhone"
+    )
+
+    let signature = credential.signature(
+      method: "GET",
+      path: "/api/sessions",
+      body: "",
+      timestamp: "1000",
+      nonce: "nonce-1"
+    )
+
+    XCTAssertEqual(signature, "zg0EYAezzych3RabhHipQ-2DLs7K-BH83fG7O1_3iTM")
+  }
+
   func testPairingPayloadParsesLocalURL() throws {
     let payload = try PairingPayload.parse(
       "cbr://pair?v=1&mode=local&baseURL=http%3A%2F%2F192.168.1.23%3A17320&token=local-token&workspace=drink&host=MacBook&expiresAt=2000",

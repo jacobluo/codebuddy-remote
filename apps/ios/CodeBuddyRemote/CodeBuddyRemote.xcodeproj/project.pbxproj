@@ -19,6 +19,7 @@
 		111111111111111111111111 /* PairingPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111013 /* PairingPayload.swift */; };
 		111111111111111111111112 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111014 /* QRCodeScannerView.swift */; };
 		111111111111111111111113 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111015 /* AppState.swift */; };
+		111111111111111111111114 /* DeviceCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111016 /* DeviceCredential.swift */; };
 		222222222222222222222101 /* ChatModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222001 /* ChatModelsTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -48,6 +49,7 @@
 		111111111111111111111013 /* PairingPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPayload.swift; sourceTree = "<group>"; };
 		111111111111111111111014 /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
 		111111111111111111111015 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		111111111111111111111016 /* DeviceCredential.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCredential.swift; sourceTree = "<group>"; };
 		222222222222222222222001 /* ChatModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelsTests.swift; sourceTree = "<group>"; };
 		222222222222222222222002 /* CodeBuddyRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodeBuddyRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -90,6 +92,7 @@
 				111111111111111111111002 /* AppView.swift */,
 				111111111111111111111010 /* ChatModels.swift */,
 				111111111111111111111013 /* PairingPayload.swift */,
+				111111111111111111111016 /* DeviceCredential.swift */,
 				111111111111111111111011 /* ChatMessageViews.swift */,
 				111111111111111111111012 /* ChatInputBar.swift */,
 				111111111111111111111014 /* QRCodeScannerView.swift */,
@@ -238,6 +241,7 @@
 				111111111111111111111110 /* ChatInputBar.swift in Sources */,
 				111111111111111111111112 /* QRCodeScannerView.swift in Sources */,
 				111111111111111111111113 /* AppState.swift in Sources */,
+				111111111111111111111114 /* DeviceCredential.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

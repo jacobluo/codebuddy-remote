@@ -82,6 +82,8 @@ http://<电脑局域网IP>:17320
 
 Token 填启动时打印的 `Local Token`。二维码内容是短期 `cbr://pair` 配对 URL，包含连接地址、必要 token、workspace、host 和过期时间。
 
+Local 模式扫码后，iOS App 会生成本机 `deviceId + deviceSecret`，把 `deviceSecret` 存入 iOS Keychain，并调用 Mac 端 `/api/devices/bind` 绑定设备。绑定成功后，Local API 请求会带 `X-CodeBuddy-Device-*` 签名头，Mac 端会校验 HMAC 签名；原来的 Local Token 仍保留为 bootstrap / 兼容认证方式。
+
 `codebuddy-remote` 会由 Local Host 通过伪终端启动并复用一个长期驻留的 `codebuddy` 进程。这个 CodeBuddy 进程显示在当前终端里，所以本地仍能看到 CLI 界面输出并继续键盘交互；iOS App 会把 prompt 写入同一个终端 session。当前工作目录就是 CodeBuddy workspace。
 
 Local Host 会把语义事件追加写入本机 JSONL 历史文件，`codebuddy-remote` 重启后 iOS App 仍可回放历史消息。默认路径按 workspace 生成：
@@ -97,6 +99,18 @@ CODEBUDDY_REMOTE_HISTORY_FILE=/path/to/events.jsonl codebuddy-remote
 ```
 
 历史文件只保存 normalized semantic events，不保存原始 `terminal.output` 刷新帧，避免 TUI 输出把历史撑爆。
+
+绑定设备列表默认保存在：
+
+```text
+~/.codebuddy-remote/devices.json
+```
+
+需要显式指定设备库时：
+
+```sh
+CODEBUDDY_REMOTE_DEVICE_STORE_FILE=/path/to/devices.json codebuddy-remote
+```
 
 如需换端口：
 

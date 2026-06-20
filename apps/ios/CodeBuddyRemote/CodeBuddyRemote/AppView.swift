@@ -51,6 +51,7 @@ struct AppView: View {
   @State private var isAttachmentMenuPresented = false
   @State private var hasLoadedPersistedChat = false
   @State private var errorMessage: String?
+  @State private var localDeviceCredential: DeviceCredential?
   @State private var streamTask: Task<Void, Never>?
   @State private var persistTask: Task<Void, Never>?
   @State private var chatNotifyTask: Task<Void, Never>?
@@ -69,7 +70,7 @@ struct AppView: View {
   }
 
   private var client: RemoteClient {
-    RemoteClient(config: config)
+    RemoteClient(config: config, deviceCredential: localDeviceCredential)
   }
 
   private var maxRenderedChatEntries: Int { 80 }
@@ -130,6 +131,7 @@ struct AppView: View {
     }
     .onAppear {
       loadPersistedChatIfNeeded()
+      localDeviceCredential = DeviceCredentialStore.load()
     }
     .safeAreaInset(edge: .top, spacing: 0) {
       topBar
@@ -471,7 +473,13 @@ struct AppView: View {
       pairingURLText = ""
       isPairingScannerPresented = false
       isSettingsPresented = false
-      connect()
+      if payload.mode == .local {
+        Task {
+          await bindLocalDeviceAndConnect()
+        }
+      } else {
+        connect()
+      }
     } catch {
       errorMessage = error.localizedDescription
       isPairingScannerPresented = false
@@ -489,6 +497,18 @@ struct AppView: View {
       relayURL = payload.relayURL
       relayToken = payload.relayToken
       pairingCode = payload.pairingCode
+    }
+  }
+
+  private func bindLocalDeviceAndConnect() async {
+    do {
+      let credential = localDeviceCredential ?? DeviceCredential.generate()
+      try await RemoteClient(config: config).bindDevice(credential)
+      try DeviceCredentialStore.save(credential)
+      localDeviceCredential = credential
+      connect()
+    } catch {
+      errorMessage = error.localizedDescription
     }
   }
 
