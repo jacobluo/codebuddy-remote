@@ -70,10 +70,9 @@ test("codebuddy-remote generates a token when one is not provided", () => {
   assert.match(config.token, /^[a-zA-Z0-9_-]{32,}$/);
 });
 
-test("startup URLs include localhost and LAN candidates", () => {
+test("startup URLs include local API candidates", () => {
   const urls = buildStartupUrls({
     port: 17320,
-    token: "token_123",
     host: "0.0.0.0",
     interfaces: {
       lo0: [{ family: "IPv4", address: "127.0.0.1", internal: true }],
@@ -82,8 +81,8 @@ test("startup URLs include localhost and LAN candidates", () => {
   });
 
   assert.deepEqual(urls, [
-    "http://127.0.0.1:17320/?token=token_123",
-    "http://192.168.1.23:17320/?token=token_123",
+    "http://127.0.0.1:17320",
+    "http://192.168.1.23:17320",
   ]);
 });
 

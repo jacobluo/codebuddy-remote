@@ -23,7 +23,18 @@ struct AppView: View {
     case resume
   }
 
-  @AppStorage("remote.mode") private var modeRaw = ConnectionMode.local.rawValue
+  private struct ChatEntry: Identifiable, Equatable {
+    enum Role {
+      case user
+      case system
+    }
+
+    let id = UUID()
+    let role: Role
+    let text: String
+  }
+
+  @AppStorage("remote.mode") private var modeRaw = ConnectionMode.relay.rawValue
   @AppStorage("remote.baseURL") private var baseURL = RemoteConfig.defaultValue.baseURL
   @AppStorage("remote.token") private var token = RemoteConfig.defaultValue.token
   @AppStorage("remote.relayURL") private var relayURL = RelayConfig.defaultValue.relayURL
@@ -33,15 +44,17 @@ struct AppView: View {
   @State private var sessions: [RemoteSession] = []
   @State private var selectedSessionId = "terminal-cli"
   @State private var terminal = TerminalScreen()
+  @State private var chatEntries: [ChatEntry] = []
   @State private var statusText = "未连接"
   @State private var prompt = ""
   @State private var isStreaming = false
+  @State private var isSettingsPresented = false
   @State private var errorMessage: String?
   @State private var streamTask: Task<Void, Never>?
   @State private var relayClient: RelayRemoteClient?
 
   private var connectionMode: ConnectionMode {
-    ConnectionMode(rawValue: modeRaw) ?? .local
+    ConnectionMode(rawValue: modeRaw) ?? .relay
   }
 
   private var config: RemoteConfig {
@@ -56,18 +69,106 @@ struct AppView: View {
     RemoteClient(config: config)
   }
 
+  private var workspaceText: String {
+    sessions.first?.workspace ?? "codebuddy-remote"
+  }
+
+  private var terminalText: String {
+    terminal.text
+  }
+
   var body: some View {
-    NavigationStack {
-      VStack(spacing: 12) {
-        connectionPanel
-        terminalPanel
-        composer
+    ZStack {
+      Color(.systemBackground)
+        .ignoresSafeArea()
+
+      ScrollViewReader { proxy in
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 24) {
+            Spacer(minLength: 104)
+
+            ForEach(chatEntries) { entry in
+              messageRow(entry)
+            }
+
+            if !terminalText.isEmpty {
+              assistantTranscript
+                .id("terminal-bottom")
+            } else {
+              emptyConversation
+                .id("terminal-bottom")
+            }
+
+            Spacer(minLength: 116)
+          }
+          .padding(.horizontal, 20)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: terminalText) {
+          withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo("terminal-bottom", anchor: .bottom)
+          }
+        }
+        .onChange(of: chatEntries.count) {
+          withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo("terminal-bottom", anchor: .bottom)
+          }
+        }
       }
-      .padding()
-      .background(Color(.systemGroupedBackground))
-      .navigationTitle("CodeBuddy Remote")
-      .toolbar {
-        ToolbarItemGroup(placement: .topBarTrailing) {
+    }
+    .safeAreaInset(edge: .top, spacing: 0) {
+      topBar
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      bottomArea
+    }
+    .sheet(isPresented: $isSettingsPresented) {
+      settingsSheet
+    }
+  }
+
+  private var topBar: some View {
+    HStack(spacing: 12) {
+      Button {
+        isSettingsPresented = true
+      } label: {
+        Image(systemName: "chevron.left")
+          .font(.system(size: 24, weight: .semibold))
+          .frame(width: 58, height: 58)
+          .foregroundStyle(.primary)
+          .background(.ultraThinMaterial)
+          .clipShape(Circle())
+      }
+      .accessibilityLabel("设置")
+      .buttonStyle(.plain)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text("CodeBuddy")
+          .font(.headline.weight(.semibold))
+          .lineLimit(1)
+        Text("\(connectionMode.title) · \(workspaceText)")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+
+      Spacer(minLength: 8)
+
+      HStack(spacing: 18) {
+        Button {
+          if isStreaming {
+            disconnect()
+          } else {
+            connect()
+          }
+        } label: {
+          Image(systemName: isStreaming ? "stop.circle" : "square.and.pencil")
+            .font(.system(size: 25, weight: .semibold))
+        }
+        .accessibilityLabel(isStreaming ? "断开" : "连接")
+        .buttonStyle(.plain)
+
+        Menu {
           Button("连接") {
             connect()
           }
@@ -77,139 +178,258 @@ struct AppView: View {
             disconnect()
           }
           .disabled(!isStreaming)
+
+          Button("中断") {
+            runAction(.interrupt)
+          }
+          .disabled(!isStreaming)
+
+          Button("恢复") {
+            runAction(.resume)
+          }
+          .disabled(!isStreaming)
+
+          Button("连接设置") {
+            isSettingsPresented = true
+          }
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: 25, weight: .bold))
         }
+        .accessibilityLabel("更多")
+        .buttonStyle(.plain)
       }
+      .foregroundStyle(.primary)
+      .padding(.horizontal, 20)
+      .frame(height: 58)
+      .background(.ultraThinMaterial)
+      .clipShape(Capsule())
+    }
+    .padding(.horizontal, 16)
+    .padding(.top, 6)
+    .padding(.bottom, 12)
+    .background {
+      Rectangle()
+        .fill(.ultraThinMaterial)
+        .mask(
+          LinearGradient(
+            colors: [.black, .black.opacity(0)],
+            startPoint: .top,
+            endPoint: .bottom
+          )
+        )
+        .ignoresSafeArea()
     }
   }
 
-  private var connectionPanel: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Picker("连接模式", selection: $modeRaw) {
-        ForEach(ConnectionMode.allCases) { mode in
-          Text(mode.title).tag(mode.rawValue)
-        }
-      }
-      .pickerStyle(.segmented)
-      .disabled(isStreaming)
-
-      if connectionMode == .local {
-        TextField("Mac 地址，例如 http://192.168.50.160:17320", text: $baseURL)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .keyboardType(.URL)
-          .textFieldStyle(.roundedBorder)
-
-        SecureField("Token", text: $token)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .textFieldStyle(.roundedBorder)
-      } else {
-        TextField("Relay 地址，例如 wss://relay.example.com/relay", text: $relayURL)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .keyboardType(.URL)
-          .textFieldStyle(.roundedBorder)
-
-        TextField("配对码", text: $pairingCode)
-          .textInputAutocapitalization(.characters)
-          .autocorrectionDisabled()
-          .textFieldStyle(.roundedBorder)
-
-        SecureField("Relay Token，可选", text: $relayToken)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .textFieldStyle(.roundedBorder)
-      }
-
-      HStack {
-        VStack(alignment: .leading, spacing: 3) {
-          Text(statusText)
-            .font(.subheadline.weight(.semibold))
-          if let workspace = sessions.first?.workspace {
-            Text(workspace)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-          }
-        }
-        Spacer()
-        statusBadge
-      }
-
+  private var bottomArea: some View {
+    VStack(spacing: 10) {
       if let errorMessage {
         Text(errorMessage)
-          .font(.caption)
+          .font(.footnote)
           .foregroundStyle(.red)
+          .lineLimit(2)
+          .multilineTextAlignment(.center)
+      } else {
+        Text(statusLine)
+          .font(.footnote.weight(.medium))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
-    }
-    .padding()
-    .background(.background)
-    .clipShape(RoundedRectangle(cornerRadius: 8))
-  }
 
-  private var terminalPanel: some View {
-    ScrollViewReader { proxy in
-      ScrollView {
-        Text(terminal.text.isEmpty ? "等待终端输出..." : terminal.text)
-          .font(.system(.footnote, design: .monospaced))
-          .foregroundStyle(Color(red: 0.91, green: 0.94, blue: 0.98))
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .padding(12)
-          .id("terminal-bottom")
-      }
-      .background(Color(red: 0.04, green: 0.06, blue: 0.12))
-      .clipShape(RoundedRectangle(cornerRadius: 8))
-      .onChange(of: terminal.text) {
-        proxy.scrollTo("terminal-bottom", anchor: .bottom)
-      }
-    }
-  }
-
-  private var composer: some View {
-    VStack(spacing: 10) {
-      TextEditor(text: $prompt)
-        .frame(minHeight: 82, maxHeight: 120)
-        .padding(8)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-      HStack {
-        Button("中断") {
-          runAction(.interrupt)
+      HStack(spacing: 14) {
+        Button {
+          isSettingsPresented = true
+        } label: {
+          Image(systemName: "plus")
+            .font(.system(size: 27, weight: .regular))
+            .frame(width: 34, height: 34)
+            .foregroundStyle(.primary)
         }
-        .buttonStyle(.bordered)
+        .accessibilityLabel("连接设置")
+        .buttonStyle(.plain)
 
-        Button("恢复") {
-          runAction(.resume)
+        TextField("向 CodeBuddy 提问", text: $prompt, axis: .vertical)
+          .font(.body)
+          .lineLimit(1...5)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .submitLabel(.send)
+          .onSubmit {
+            sendPrompt()
+          }
+
+        Button {
+          if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            isSettingsPresented = true
+          } else {
+            sendPrompt()
+          }
+        } label: {
+          Image(systemName: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "mic" : "arrow.up.circle.fill")
+            .font(.system(size: 28, weight: .semibold))
+            .foregroundStyle(.primary)
         }
-        .buttonStyle(.bordered)
-
-        Spacer()
-
-        Button("发送") {
-          sendPrompt()
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedSessionId.isEmpty)
+        .accessibilityLabel(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "语音输入" : "发送")
+        .disabled(!isStreaming || selectedSessionId.isEmpty)
       }
-    }
-  }
-
-  private var statusBadge: some View {
-    Text(isStreaming ? "在线" : "离线")
-      .font(.caption.weight(.semibold))
-      .foregroundStyle(isStreaming ? .green : .secondary)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 5)
-      .background((isStreaming ? Color.green : Color.gray).opacity(0.12))
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+      .background(.ultraThinMaterial)
       .clipShape(Capsule())
+      .shadow(color: .black.opacity(0.10), radius: 24, x: 0, y: 8)
+    }
+    .padding(.horizontal, 22)
+    .padding(.top, 12)
+    .padding(.bottom, 8)
+    .background {
+      Rectangle()
+        .fill(.ultraThinMaterial)
+        .mask(
+          LinearGradient(
+            colors: [.black.opacity(0), .black, .black],
+            startPoint: .top,
+            endPoint: .bottom
+          )
+        )
+        .ignoresSafeArea()
+    }
+  }
+
+  private var statusLine: String {
+    if isStreaming {
+      return "\(ProcessInfo.processInfo.hostName) \(statusText)"
+    }
+    return "未连接"
+  }
+
+  private var emptyConversation: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("未连接")
+        .font(.title2.weight(.semibold))
+      Button {
+        connect()
+      } label: {
+        Label("连接", systemImage: "link")
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(isStreaming)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.top, 48)
+  }
+
+  private var assistantTranscript: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 8) {
+        Image(systemName: "square.stack.3d.up")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Text("CodeBuddy session")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.secondary)
+      }
+
+      Text(terminalText)
+        .font(.system(.body, design: .monospaced))
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder
+  private func messageRow(_ entry: ChatEntry) -> some View {
+    switch entry.role {
+    case .user:
+      HStack {
+        Spacer(minLength: 48)
+        Text(entry.text)
+          .font(.body)
+          .foregroundStyle(.primary)
+          .padding(.horizontal, 18)
+          .padding(.vertical, 12)
+          .background(Color(.secondarySystemFill))
+          .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+      }
+    case .system:
+      Text(entry.text)
+        .font(.body)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private var settingsSheet: some View {
+    NavigationStack {
+      Form {
+        Section("连接") {
+          Picker("模式", selection: $modeRaw) {
+            ForEach(ConnectionMode.allCases) { mode in
+              Text(mode.title).tag(mode.rawValue)
+            }
+          }
+          .pickerStyle(.segmented)
+          .disabled(isStreaming)
+
+          if connectionMode == .local {
+            TextField("Mac 地址", text: $baseURL)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .keyboardType(.URL)
+
+            SecureField("Token", text: $token)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+          } else {
+            TextField("Relay 地址", text: $relayURL)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .keyboardType(.URL)
+
+            TextField("配对码", text: $pairingCode)
+              .textInputAutocapitalization(.characters)
+              .autocorrectionDisabled()
+
+            SecureField("Relay Token，可选", text: $relayToken)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+          }
+        }
+
+        Section("Session") {
+          LabeledContent("状态", value: statusText)
+          LabeledContent("Workspace", value: workspaceText)
+        }
+      }
+      .navigationTitle("连接设置")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("关闭") {
+            isSettingsPresented = false
+          }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(isStreaming ? "断开" : "连接") {
+            if isStreaming {
+              disconnect()
+            } else {
+              connect()
+            }
+            isSettingsPresented = false
+          }
+        }
+      }
+    }
   }
 
   private func connect() {
     disconnect()
     errorMessage = nil
     terminal = TerminalScreen()
-    statusText = "正在连接..."
+    chatEntries.removeAll()
+    statusText = "正在连接"
 
     streamTask = Task {
       do {
@@ -252,7 +472,7 @@ struct AppView: View {
     relayClient?.disconnect()
     relayClient = nil
     isStreaming = false
-    if statusText != "正在连接..." {
+    if statusText != "正在连接" {
       statusText = "未连接"
     }
   }
@@ -262,6 +482,7 @@ struct AppView: View {
     guard !text.isEmpty else { return }
     prompt = ""
     errorMessage = nil
+    appendUserMessage(text)
 
     Task {
       do {
@@ -304,6 +525,10 @@ struct AppView: View {
 
   private func handle(_ event: RemoteEvent) {
     switch event.name {
+    case "user.message":
+      if let text = event.payload.text {
+        appendUserMessage(text)
+      }
     case "terminal.output":
       if let text = event.payload.text {
         terminal.write(text)
@@ -312,9 +537,20 @@ struct AppView: View {
       if let status = event.payload.status {
         statusText = "状态：\(status)"
       }
+    case "error":
+      if let text = event.payload.text {
+        errorMessage = text
+      }
     default:
       break
     }
+  }
+
+  private func appendUserMessage(_ text: String) {
+    if chatEntries.last?.role == .user, chatEntries.last?.text == text {
+      return
+    }
+    chatEntries.append(ChatEntry(role: .user, text: text))
   }
 }
 

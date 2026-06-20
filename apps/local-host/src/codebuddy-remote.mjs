@@ -23,17 +23,16 @@ export function createRunConfig({ cwd = process.cwd(), env = process.env } = {})
 
 export function buildStartupUrls({
   port,
-  token,
   host,
   interfaces = os.networkInterfaces(),
 }) {
-  const urls = [`http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`];
+  const urls = [`http://127.0.0.1:${port}`];
   if (host === "127.0.0.1" || host === "localhost") return urls;
 
   for (const entries of Object.values(interfaces)) {
     for (const entry of entries || []) {
       if (entry.family !== "IPv4" || entry.internal) continue;
-      urls.push(`http://${entry.address}:${port}/?token=${encodeURIComponent(token)}`);
+      urls.push(`http://${entry.address}:${port}`);
     }
   }
   return [...new Set(urls)];
@@ -103,7 +102,6 @@ export async function main() {
   const actualPort = address.port;
   const urls = buildStartupUrls({
     port: actualPort,
-    token: config.token,
     host: config.host,
   });
 
@@ -112,13 +110,14 @@ export async function main() {
   console.log("");
   console.log(`  Workspace   ${config.cwd}`);
   console.log(`  Local Host  http://${config.host}:${actualPort}`);
+  console.log(`  Local Token ${config.token}`);
   console.log(`  CodeBuddy   ${config.cliPath}`);
   if (config.relayUrl) {
     console.log(`  Relay       ${config.relayUrl}`);
     console.log(`  Pairing     ${config.pairingCode}`);
   }
   console.log("");
-  console.log("  Open on phone:");
+  console.log("  iOS app Local API candidates:");
   for (const url of urls) console.log(`  ${url}`);
   console.log("");
   console.log("  Press Ctrl+C to stop");

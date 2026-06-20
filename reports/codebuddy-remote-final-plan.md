@@ -7,7 +7,7 @@ Generated: 2026-06-19
 采用“本地 CodeBuddy session owner + 手机远程控制端”的方案。
 
 ```text
-手机 Web/App
+iOS App
   ↓
 安全控制通道 Relay / Tunnel / P2P
   ↓
@@ -67,14 +67,14 @@ CLI Adapter
   ↓
 Local Host
   ↓
-手机 Web
+iOS App
 ```
 
 范围：
 
 - 用户在目标项目目录执行 `codebuddy-remote`，该目录就是 CodeBuddy workspace。
 - `codebuddy-remote` 通过伪终端以前台交互模式启动长期驻留的 `codebuddy`，本地终端保留 CodeBuddy CLI 界面输出和键盘交互。
-- `codebuddy-remote` 同时启动手机 Web 控制端，手机 prompt 写入同一个 CodeBuddy 终端 session。
+- `codebuddy-remote` 同时启动给 iOS App 使用的 Local API，手机 prompt 写入同一个 CodeBuddy 终端 session。
 - `listSessions`
 - `selectSession`
 - `sendPrompt`
@@ -120,7 +120,7 @@ Bridge Extension
   ↓
 Local Host
   ↓
-手机 Web
+iOS App
 ```
 
 范围：
@@ -406,13 +406,13 @@ Local Host 本地保存轻量审计日志：
 
 - `packages/protocol/`：统一 command/event 协议工具。
 - `apps/local-host/`：Local Host HTTP/SSE 服务。
-- `apps/mobile-web/`：最小手机 Web 控制台。
+- `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端。
 - `tests/`：协议、session、prompt、event、interrupt/resume 和鉴权测试。
 - `TerminalCliAdapter`：通过 macOS 伪终端启动真实 `codebuddy` CLI，本地终端保留 CodeBuddy 原生界面和键盘交互，手机 prompt 写入同一个终端 session。
 - `ServeCliAdapter`：保留为探索/对照路径，通过 `codebuddy --serve` + ACP HTTP 接口接入 CodeBuddy session，但不作为默认入口。
 - `RealCliAdapter`：保留为短进程对照路径，通过 `codebuddy -p --output-format stream-json --max-turns 1` 接入真实 CodeBuddy CLI。
 
-当前 `codebuddy-remote` 默认接入 `TerminalCliAdapter`。用户在目标项目目录执行 `codebuddy-remote` 后，当前终端会进入真实 CodeBuddy CLI；手机 Web 端通过 Local Host 发送 prompt，并通过 `terminal.output` 事件查看终端输出。
+当前 `codebuddy-remote` 默认接入 `TerminalCliAdapter`。用户在目标项目目录执行 `codebuddy-remote` 后，当前终端会进入真实 CodeBuddy CLI；iOS App 通过 Local Host 或 Relay 发送 prompt，并通过 `terminal.output` 事件查看终端输出。
 
 `server.mjs` 仍可用于开发调试：默认 mock adapter；设置 `CODEBUDDY_REMOTE_ADAPTER=real` 可切换短进程 `RealCliAdapter`；设置 `CODEBUDDY_REMOTE_ADAPTER=serve` 可切换 ACP `ServeCliAdapter`。
 

@@ -1,16 +1,10 @@
 import http from "node:http";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   createCommand,
   createEvent,
   validateCommand,
 } from "../../../packages/protocol/src/index.mjs";
-
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const WEB_ROOT = path.resolve(MODULE_DIR, "..", "..", "mobile-web", "public");
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -46,11 +40,6 @@ export function createLocalHost({ adapter, token, host = "127.0.0.1" }) {
 
       if (url.pathname === "/health") {
         sendJson(res, 200, { ok: true });
-        return;
-      }
-
-      if (req.method === "GET" && isStaticPath(url.pathname)) {
-        await serveStatic(res, url.pathname);
         return;
       }
 
@@ -276,31 +265,4 @@ function writeSse(res, event) {
   res.write(`id: ${event.seq}\n`);
   res.write(`event: ${event.name}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function isStaticPath(pathname) {
-  return (
-    pathname === "/" ||
-    pathname === "/app.js" ||
-    pathname === "/terminal-text.js" ||
-    pathname === "/styles.css"
-  );
-}
-
-async function serveStatic(res, pathname) {
-  const fileName = pathname === "/" ? "index.html" : pathname.slice(1);
-  const filePath = path.join(WEB_ROOT, fileName);
-  const content = await fs.readFile(filePath);
-  res.writeHead(200, {
-    "content-type": contentType(fileName),
-    "cache-control": "no-store",
-  });
-  res.end(content);
-}
-
-function contentType(fileName) {
-  if (fileName.endsWith(".html")) return "text/html; charset=utf-8";
-  if (fileName.endsWith(".css")) return "text/css; charset=utf-8";
-  if (fileName.endsWith(".js")) return "text/javascript; charset=utf-8";
-  return "application/octet-stream";
 }

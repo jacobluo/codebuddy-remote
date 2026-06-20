@@ -105,23 +105,13 @@ test("rejects unauthenticated API calls", async () => {
   });
 });
 
-test("serves the mobile web console", async () => {
+test("does not serve a mobile web console", async () => {
   await withHost(async ({ baseUrl }) => {
     const response = await fetch(`${baseUrl}/`);
-    const html = await response.text();
+    const body = await response.json();
 
-    assert.equal(response.status, 200);
-    assert.match(response.headers.get("content-type"), /text\/html/);
-    assert.match(html, /CodeBuddy Remote/);
-    assert.match(html, /id="promptForm"/);
-    assert.match(html, /id="terminalOutput"/);
-    assert.match(html, /id="interruptButton"/);
-    assert.match(html, /id="resumeButton"/);
-
-    const terminalText = await fetch(`${baseUrl}/terminal-text.js`);
-    const terminalTextSource = await terminalText.text();
-    assert.equal(terminalText.status, 200);
-    assert.match(terminalTextSource, /normalizeTerminalOutput/);
+    assert.equal(response.status, 401);
+    assert.deepEqual(body, { ok: false, error: "unauthorized" });
   });
 });
 

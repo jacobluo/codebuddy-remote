@@ -12,7 +12,7 @@
 
 ```text
 本地 CodeBuddy CLI / IDE = session owner
-手机 Web/App = control endpoint
+iOS App = control endpoint
 Local Host / Relay = 安全连接与事件转发层
 ```
 
@@ -35,7 +35,6 @@ Local Host / Relay = 安全连接与事件转发层
 
 - `apps/local-host/`：本地控制面服务，支持 mock adapter 和真实 CodeBuddy CLI adapter。
 - `apps/relay/`：应用层 WebSocket Relay，只转发 CodeBuddyRemote command/event，不做通用端口穿透。
-- `apps/mobile-web/`：手机 Web 控制台静态页面。
 - `apps/ios/CodeBuddyRemote/`：原生 iOS 控制端，连接本机 `codebuddy-remote`。
 - `packages/protocol/`：统一 command/event 协议工具。
 - `tests/`：协议和 Local Host 行为测试。
@@ -47,7 +46,7 @@ Local Host / Relay = 安全连接与事件转发层
 
 ## 本地运行
 
-当前主入口是 `codebuddy-remote`：在目标项目目录执行它，就等价于在该目录启动一个真实的前台 `codebuddy` CLI，同时额外开启手机 Web 控制端。
+当前主入口是 `codebuddy-remote`：在目标项目目录执行它，就等价于在该目录启动一个真实的前台 `codebuddy` CLI，同时额外开启给 iOS App 使用的 Local API。
 
 ```sh
 npm test
@@ -57,7 +56,7 @@ codebuddy-remote
 默认地址：
 
 ```text
-http://127.0.0.1:17320/?token=dev-token
+http://127.0.0.1:17320
 ```
 
 如果还没有安装本地命令，可以在本仓库执行一次：
@@ -75,13 +74,15 @@ cd /Users/robiluo/aicoding/drink
 codebuddy-remote
 ```
 
-启动后终端会打印手机可访问 URL。手机和电脑需要在同一局域网，访问形如：
+启动后终端会打印 Local API 候选地址和 token。局域网模式下，手机和电脑需要在同一局域网，在 iOS App 里填写形如：
 
 ```text
-http://<电脑局域网IP>:17320/?token=<启动时打印的token>
+http://<电脑局域网IP>:17320
 ```
 
-`codebuddy-remote` 会由 Local Host 通过伪终端启动并复用一个长期驻留的 `codebuddy` 进程。这个 CodeBuddy 进程显示在当前终端里，所以本地仍能看到 CLI 界面输出并继续键盘交互；手机端会把 prompt 写入同一个终端 session。当前工作目录就是 CodeBuddy workspace。
+Token 填启动时打印的 `Local Token`。
+
+`codebuddy-remote` 会由 Local Host 通过伪终端启动并复用一个长期驻留的 `codebuddy` 进程。这个 CodeBuddy 进程显示在当前终端里，所以本地仍能看到 CLI 界面输出并继续键盘交互；iOS App 会把 prompt 写入同一个终端 session。当前工作目录就是 CodeBuddy workspace。
 
 如需换端口：
 
