@@ -67,8 +67,7 @@ final class RelayRemoteClient {
             "token": config.token,
           ])
         } catch {
-          joinContinuation = nil
-          continuation.resume(throwing: error)
+          resumeJoin(throwing: error)
         }
       }
     }
@@ -211,8 +210,7 @@ final class RelayRemoteClient {
       }
     } catch {
       eventContinuation?.finish(throwing: error)
-      joinContinuation?.resume(throwing: error)
-      joinContinuation = nil
+      resumeJoin(throwing: error)
     }
   }
 
@@ -236,8 +234,7 @@ final class RelayRemoteClient {
 
     switch type {
     case "client.joined":
-      joinContinuation?.resume()
-      joinContinuation = nil
+      resumeJoin()
     case "error":
       let message = root["error"] as? String ?? "Relay 返回错误"
       throw RelayClientError.relayError(message)
@@ -291,5 +288,15 @@ final class RelayRemoteClient {
       throw RelayClientError.malformedFrame
     }
     try await task.send(.string(text))
+  }
+
+  private func resumeJoin(throwing error: Error? = nil) {
+    guard let continuation = joinContinuation else { return }
+    joinContinuation = nil
+    if let error {
+      continuation.resume(throwing: error)
+    } else {
+      continuation.resume()
+    }
   }
 }

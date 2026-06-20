@@ -85,6 +85,7 @@ struct AppView: View {
   @State private var selectedSessionId = "terminal-cli"
   @State private var terminal = TerminalScreen()
   @State private var chatEntries: [ChatEntry] = []
+  @State private var chatUpdateToken = 0
   @State private var latestHandledSeq = 0
   @State private var statusText = "未连接"
   @State private var prompt = ""
@@ -121,23 +122,22 @@ struct AppView: View {
         .ignoresSafeArea()
 
       ScrollViewReader { proxy in
-        ScrollView {
+        ScrollView(.vertical) {
           LazyVStack(alignment: .leading, spacing: 24) {
-            Spacer(minLength: 104)
-
             ForEach(chatEntries) { entry in
               messageRow(entry)
             }
 
             emptyConversation
               .id("conversation-bottom")
-
-            Spacer(minLength: 116)
           }
           .padding(.horizontal, 20)
+          .padding(.top, 18)
+          .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: chatEntries.count) {
+        .scrollIndicators(.visible)
+        .onChange(of: chatUpdateToken) {
           withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo("conversation-bottom", anchor: .bottom)
           }
@@ -280,15 +280,23 @@ struct AppView: View {
         .accessibilityLabel("连接设置")
         .buttonStyle(.plain)
 
-        TextField("向 CodeBuddy 提问", text: $prompt, axis: .vertical)
-          .font(.body)
-          .lineLimit(1...5)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .submitLabel(.send)
-          .onSubmit {
-            sendPrompt()
+        ZStack(alignment: .topLeading) {
+          if prompt.isEmpty {
+            Text("向 CodeBuddy 提问")
+              .font(.body)
+              .foregroundStyle(.secondary)
+              .padding(.top, 8)
+              .padding(.leading, 5)
           }
+
+          TextEditor(text: $prompt)
+            .font(.body)
+            .frame(minHeight: 36, maxHeight: 112)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
+            .textInputAutocapitalization(.sentences)
+            .autocorrectionDisabled()
+        }
 
         Button {
           if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -784,15 +792,19 @@ struct AppView: View {
       return
     }
     chatEntries.append(ChatEntry(role: .user, text: text))
-    persistChatEntries()
+    persistChatEntriesAndNotify()
   }
 
   private func appendAssistantMessage(_ text: String) {
-    if chatEntries.last?.role == .assistant, chatEntries.last?.text == text {
-      return
+    if let last = chatEntries.last, last.role == .assistant {
+      if last.text == text || last.text.hasSuffix("\n\(text)") {
+        return
+      }
+      chatEntries[chatEntries.count - 1].text += "\n\(text)"
+    } else {
+      chatEntries.append(ChatEntry(role: .assistant, text: text))
     }
-    chatEntries.append(ChatEntry(role: .assistant, text: text))
-    persistChatEntries()
+    persistChatEntriesAndNotify()
   }
 
   private func appendActivityCard(from payload: EventPayload, defaultStatus: String) {
@@ -813,7 +825,7 @@ struct AppView: View {
     } else {
       chatEntries.append(entry)
     }
-    persistChatEntries()
+    persistChatEntriesAndNotify()
   }
 
   private func resolvePermissionCard(from payload: EventPayload) {
@@ -821,7 +833,7 @@ struct AppView: View {
       chatEntries[index].title = payload.title ?? chatEntries[index].title
       chatEntries[index].text = payload.text ?? chatEntries[index].text
       chatEntries[index].status = payload.status ?? "completed"
-      persistChatEntries()
+      persistChatEntriesAndNotify()
       return
     }
 
@@ -873,6 +885,11 @@ struct AppView: View {
       return
     }
     persistedChatLog = text
+  }
+
+  private func persistChatEntriesAndNotify() {
+    persistChatEntries()
+    chatUpdateToken += 1
   }
 }
 

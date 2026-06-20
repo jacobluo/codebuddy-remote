@@ -1,10 +1,11 @@
-const TOOL_CALL_RE = /^●\s+([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/;
+const TOOL_CALL_RE = /^●\s+(?:(?<phase>[A-Za-z][A-Za-z0-9_-]*)\s+·\s+)?(?<toolName>[A-Za-z][A-Za-z0-9_-]*)\((?<args>.*)\)$/;
 const TOOL_OUTPUT_RE = /^[⎿└]\s*(.*)$/;
 const DIFF_RE = /([+-]?\d+)\s+additions?\s+([-+]?\d+)?\s*-?\s*(\d+)?\s*deletions?/i;
 
 export class TerminalSemanticParser {
   #seen = new Set();
   #lastTool = null;
+  #inAssistant = false;
 
   write(chunk) {
     const text = cleanTerminalText(String(chunk || ""));
@@ -20,23 +21,17 @@ export class TerminalSemanticParser {
         continue;
       }
 
-      const permission = parsePermission(line, this.#lastTool);
-      if (permission) {
-        this.#push(events, permission);
-        this.#push(events, {
-          name: "session.state",
-          payload: {
-            kind: "status",
-            title: "waiting_permission",
-            status: "waiting_permission",
-            text: line,
-          },
-        });
+      const permissionEvents = parsePermission(line, this.#lastTool);
+      if (permissionEvents.length) {
+        for (const permissionEvent of permissionEvents) {
+          this.#push(events, permissionEvent);
+        }
         continue;
       }
 
       const toolOutput = parseToolOutput(line, this.#lastTool);
       if (toolOutput) {
+        this.#inAssistant = false;
         const diff = parseDiffFromOutput(toolOutput, this.#lastTool);
         if (diff) {
           this.#push(events, diff);
@@ -48,6 +43,7 @@ export class TerminalSemanticParser {
 
       const tool = parseToolCall(line);
       if (tool) {
+        this.#inAssistant = false;
         this.#lastTool = tool.context;
         this.#push(events, tool.event);
         continue;
@@ -56,7 +52,17 @@ export class TerminalSemanticParser {
       const assistant = parseAssistant(line);
       if (assistant) {
         this.#lastTool = null;
+        this.#inAssistant = true;
         this.#push(events, assistant);
+        continue;
+      }
+
+      const continuation = parseAssistantContinuation(line, {
+        inAssistant: this.#inAssistant,
+        lastTool: this.#lastTool,
+      });
+      if (continuation) {
+        this.#push(events, continuation);
       }
     }
 
@@ -73,7 +79,7 @@ export class TerminalSemanticParser {
 
 function parseAssistant(line) {
   if (!line.startsWith("● ")) return null;
-  const text = line.slice(2).trim();
+  const text = stripInlineNoise(stripAssistantPhase(line.slice(2).trim()));
   if (!text || TOOL_CALL_RE.test(line)) return null;
   if (isNoise(text)) return null;
   return {
@@ -87,15 +93,32 @@ function parseAssistant(line) {
   };
 }
 
+function parseAssistantContinuation(line, { inAssistant, lastTool }) {
+  if (!inAssistant) return null;
+  if (lastTool) return null;
+  if (isNoise(line) || isMenuOption(line) || isBoxDrawing(line)) return null;
+  if (/^(Bash command|Do you want to proceed\?)$/i.test(line)) return null;
+  return {
+    name: "assistant.delta",
+    payload: {
+      kind: "assistant",
+      title: "Assistant",
+      text: stripInlineNoise(line),
+      status: "completed",
+    },
+  };
+}
+
 function parseToolCall(line) {
   const match = line.match(TOOL_CALL_RE);
   if (!match) return null;
 
-  const [, toolName, rawArgs] = match;
+  const { phase = "", toolName, args: rawArgs } = match.groups;
   const args = rawArgs.trim();
   const title = titleForTool(toolName, args);
   const kind = kindForTool(toolName, args);
   const context = {
+    phase,
     toolName,
     args,
     kind,
@@ -111,6 +134,7 @@ function parseToolCall(line) {
       payload: {
         kind,
         title,
+        phase,
         toolName,
         command: context.command,
         target: context.target,
@@ -167,21 +191,35 @@ function parseDiffFromOutput(outputEvent, lastTool) {
 }
 
 function parsePermission(line, lastTool) {
-  if (!/waiting for permission|permission|approve|do you want to proceed/i.test(line)) return null;
+  if (!/waiting for permission|permission|approve|do you want to proceed/i.test(line)) return [];
   const asksToProceed = /do you want to proceed/i.test(line);
-  const title = asksToProceed && lastTool?.title ? `需要确认：${lastTool.title}` : "等待权限";
-  return {
-    name: "tool.permissionRequested",
+  const stateEvent = {
+    name: "session.state",
     payload: {
-      kind: "permission",
-      title,
-      toolName: lastTool?.toolName || "",
-      command: lastTool?.command || "",
-      target: lastTool?.target || "",
+      kind: "status",
+      title: "waiting_permission",
+      status: "waiting_permission",
       text: line,
-      status: "waiting",
     },
   };
+  if (!asksToProceed) return [stateEvent];
+
+  const title = asksToProceed && lastTool?.title ? `需要确认：${lastTool.title}` : "等待权限";
+  return [
+    {
+      name: "tool.permissionRequested",
+      payload: {
+        kind: "permission",
+        title,
+        toolName: lastTool?.toolName || "",
+        command: lastTool?.command || "",
+        target: lastTool?.target || "",
+        text: line,
+        status: "waiting",
+      },
+    },
+    stateEvent,
+  ];
 }
 
 function cleanTerminalText(text) {
@@ -200,9 +238,34 @@ function normalizeLine(line) {
 function isNoise(text) {
   if (text.startsWith("Tip:")) return true;
   if (text.includes("Waking…")) return true;
+  if (text.includes("Sweeping…")) return true;
   if (text.includes("esc to interrupt")) return true;
+  if (text.includes("Press Shift+Tab")) return true;
+  if (/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+/.test(text)) return true;
+  if (/\bExplore · .*\b(processing|running|waiting for permission)\b/i.test(text)) return true;
   if (text === "? for shortcuts") return true;
+  if (/^\(?\d+s\s+·/.test(text)) return true;
+  if (/^>($|\s+)/.test(text)) return true;
   return false;
+}
+
+function stripAssistantPhase(text) {
+  return text.replace(/^[A-Za-z][A-Za-z0-9_-]*\s+·\s+/, "");
+}
+
+function stripInlineNoise(text) {
+  return text
+    .replace(/\s*[⎿└]\s*Tip:.*$/i, "")
+    .replace(/\s*Press Shift\+Tab.*$/i, "")
+    .trim();
+}
+
+function isMenuOption(text) {
+  return /^>?\s*\d+\.\s+/.test(text);
+}
+
+function isBoxDrawing(text) {
+  return /^[─━╭╮╰╯│┌┐└┘├┤┬┴┼\s]+$/.test(text);
 }
 
 function titleForTool(toolName, args) {
