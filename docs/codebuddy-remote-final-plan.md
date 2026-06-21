@@ -11,6 +11,7 @@ iOS App
   <-> Relay WebSocket + device HMAC + E2E encrypted payload
   <-> Mac codebuddy-remote
   <-> Local Host
+  <-> Session Command Workflow
   <-> TerminalCliAdapter
   <-> 本地长期驻留 codebuddy CLI
 ```
@@ -36,6 +37,7 @@ iOS App
 - `apps/local-host/src/codebuddy-remote.mjs`
 - `apps/local-host/src/terminal-cli-adapter.mjs`
 - `apps/local-host/src/local-host.mjs`
+- `apps/local-host/src/session-command-workflow.mjs`
 - `apps/local-host/src/relay-client.mjs`
 - `apps/local-host/src/relay-e2e.mjs`
 
@@ -44,7 +46,7 @@ iOS App
 - `codebuddy-remote` 要求配置 `CODEBUDDY_REMOTE_RELAY_URL`，缺少时不生成 pairing URL 并退出。
 - 默认用 `TerminalCliAdapter` 通过 macOS 伪终端启动真实 `codebuddy`。
 - 当前终端显示真实 CodeBuddy CLI TUI，手机 prompt 写入同一个终端 session。
-- Local Host 提供内部 HTTP/SSE 控制面和统一 command/event 处理。
+- Local Host 提供内部 HTTP/SSE 控制面；Session Command Workflow 负责统一 command/event 行为。
 - 事件按 `seq` 编号，支持 `listEvents` 窗口查询和重连回放。
 - semantic events 写入本地 JSONL 历史文件，重启后可恢复历史。
 - 原始 `terminal.output` 刷新帧不写入历史，避免 TUI 输出撑爆存储。
@@ -96,6 +98,11 @@ iOS App
 
 - `packages/protocol/src/index.mjs`
 - `tests/`
+
+测试现状：
+
+- Node 测试覆盖 CLI 入口、Local Host、Session Command Workflow、Relay、协议、adapter 和终端语义解析。
+- iOS 单元测试覆盖聊天模型、消息压缩、活动折叠和长历史性能。
 
 已实现命令：
 
@@ -316,4 +323,5 @@ iOS 默认持久化：
 
 - `README.md`：运行方式和目录说明。
 - `docs/security-and-pairing-flow.md`：安全设计与登录流程。
+- `docs/blog/codebuddy-remote-architecture.md`：面向读者的架构和实现介绍。
 - `docs/archive/README.md`：探索资料入口。

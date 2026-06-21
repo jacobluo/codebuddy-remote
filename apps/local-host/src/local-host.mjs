@@ -11,9 +11,10 @@ import { dirname } from "node:path";
 
 import {
   createCommand,
-  createEvent,
-  validateCommand,
 } from "../../../packages/protocol/src/index.mjs";
+import {
+  createSessionCommandWorkflow,
+} from "./session-command-workflow.mjs";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -21,7 +22,6 @@ const JSON_HEADERS = {
 };
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
-const TERMINAL_CONTROL_PATTERN = /^[0-9ynqYN]$/;
 const MAX_DEVICE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export function createLocalHost({
@@ -38,27 +38,14 @@ export function createLocalHost({
   const deviceStore = createDeviceStore(deviceStoreFile);
   const auditStore = createAuditStore(auditFile);
   let bindTokenConsumed = false;
-  let seq = historyStore.latestSeq;
-  const events = [...historyStore.events];
-  const subscribers = new Set();
-
-  adapter.onEvent?.((event) => {
-    pushEvent(event);
+  const workflow = createSessionCommandWorkflow({
+    adapter,
+    events: historyStore.events,
+    latestSeq: historyStore.latestSeq,
+    onEvent(event) {
+      historyStore.append(event);
+    },
   });
-
-  function pushEvent({ sessionId, conversationId, name, payload }) {
-    const event = createEvent({
-      sessionId,
-      conversationId,
-      seq: ++seq,
-      name,
-      payload,
-    });
-    events.push(event);
-    historyStore.append(event);
-    for (const subscriber of subscribers) subscriber(event);
-    return event;
-  }
 
   async function handle(req, res) {
     try {
@@ -168,7 +155,7 @@ export function createLocalHost({
       }
 
       if (req.method === "GET" && url.pathname === "/api/sessions") {
-        sendJson(res, 200, await executeCommand(createCommand({
+        sendJson(res, 200, await workflow.handleCommand(createCommand({
           sessionId: "local-host",
           name: "listSessions",
           payload: {},
@@ -178,7 +165,7 @@ export function createLocalHost({
 
       const stateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/state$/);
       if (req.method === "GET" && stateMatch) {
-        sendJson(res, 200, await executeCommand(createCommand({
+        sendJson(res, 200, await workflow.handleCommand(createCommand({
           sessionId: stateMatch[1],
           name: "getState",
           payload: {},
@@ -208,7 +195,7 @@ export function createLocalHost({
           promptLength: text.length,
           promptSha256: crypto.createHash("sha256").update(text).digest("hex"),
         });
-        sendJson(res, 202, await executeCommand(command));
+        sendJson(res, 202, await workflow.handleCommand(command));
         return;
       }
 
@@ -227,7 +214,7 @@ export function createLocalHost({
           deviceId: auth.deviceId,
           sessionId,
         });
-        sendJson(res, 202, await executeCommand(command));
+        sendJson(res, 202, await workflow.handleCommand(command));
         return;
       }
 
@@ -252,7 +239,7 @@ export function createLocalHost({
           sessionId,
           label: body.label || "",
         });
-        sendJson(res, 202, await executeCommand(command));
+        sendJson(res, 202, await workflow.handleCommand(command));
         return;
       }
 
@@ -261,8 +248,8 @@ export function createLocalHost({
         const before = Number(url.searchParams.get("before") || 0);
         const limit = Number(url.searchParams.get("limit") || 0);
         sendJson(res, 200, {
-          events: selectEvents(events, { after, before, limit }),
-          latestSeq: seq,
+          events: workflow.getEvents({ after, before, limit }),
+          latestSeq: workflow.latestSeq,
         });
         return;
       }
@@ -294,122 +281,13 @@ export function createLocalHost({
       connection: "keep-alive",
     });
 
-    for (const event of events.filter((item) => item.seq > after)) {
+    for (const event of workflow.getEvents({ after })) {
       writeSse(res, event);
     }
 
     const subscriber = (event) => writeSse(res, event);
-    subscribers.add(subscriber);
-    res.on("close", () => subscribers.delete(subscriber));
-  }
-
-  async function executeCommand(command) {
-    validateCommand(command);
-
-    if (command.name === "listSessions") {
-      return { sessions: adapter.listSessions() };
-    }
-
-    if (command.name === "listEvents") {
-      const after = Number(command.payload.after || 0);
-      const before = Number(command.payload.before || 0);
-      const limit = Number(command.payload.limit || 0);
-      return {
-        events: selectEvents(events, { after, before, limit }),
-        latestSeq: seq,
-      };
-    }
-
-    if (command.name === "getState") {
-      return { state: adapter.getState(command.sessionId) };
-    }
-
-    if (command.name === "sendPrompt") {
-      const text = String(command.payload.text || "").trim();
-      if (!text) throw new Error("text is required");
-
-      pushEvent({
-        sessionId: command.sessionId,
-        name: "user.message",
-        payload: { text },
-      });
-      pushEvent({
-        sessionId: command.sessionId,
-        name: "session.state",
-        payload: { status: "running" },
-      });
-
-      const result = await adapter.sendPrompt(command.sessionId, text);
-      if (!result.terminalOnly) {
-        pushEvent({
-          sessionId: command.sessionId,
-          conversationId: result.conversationId,
-          name: "assistant.delta",
-          payload: { text: result.assistantText },
-        });
-        pushEvent({
-          sessionId: command.sessionId,
-          conversationId: result.conversationId,
-          name: "assistant.completed",
-          payload: {},
-        });
-      }
-      pushEvent({
-        sessionId: command.sessionId,
-        conversationId: result.conversationId,
-        name: "session.state",
-        payload: { status: result.status || "idle" },
-      });
-
-      return { command };
-    }
-
-    if (command.name === "sendTerminalInput") {
-      const text = String(command.payload.text || "");
-      if (!text) throw new Error("text is required");
-      validateTerminalControlInput(text);
-      if (typeof adapter.sendTerminalInput !== "function") {
-        throw new Error("adapter does not support terminal input");
-      }
-
-      const result = await adapter.sendTerminalInput(command.sessionId, text);
-      pushEvent({
-        sessionId: command.sessionId,
-        conversationId: result.conversationId,
-        name: "tool.permissionResolved",
-        payload: {
-          kind: "permission",
-          title: command.payload.label || "已发送确认",
-          text: command.payload.label || text,
-          status: "completed",
-        },
-      });
-      pushEvent({
-        sessionId: command.sessionId,
-        conversationId: result.conversationId,
-        name: "session.state",
-        payload: { status: result.status || "interactive" },
-      });
-
-      return { command };
-    }
-
-    if (command.name === "interrupt" || command.name === "resume") {
-      const state =
-        command.name === "interrupt"
-          ? await adapter.interrupt(command.sessionId)
-          : await adapter.resume(command.sessionId);
-
-      pushEvent({
-        sessionId: command.sessionId,
-        name: "session.state",
-        payload: { status: state.status },
-      });
-
-      return { command, state };
-    }
-
-    throw new Error(`unsupported command: ${command.name}`);
+    const unsubscribe = workflow.subscribe(subscriber);
+    res.on("close", unsubscribe);
   }
 
   function audit(type, fields = {}) {
@@ -444,30 +322,15 @@ export function createLocalHost({
           .then(resolve, reject);
       });
     },
-    pushEvent,
-    handleCommand: executeCommand,
+    pushEvent: workflow.pushEvent,
+    handleCommand: workflow.handleCommand,
     getEvents({ after = 0 } = {}) {
-      return selectEvents(events, { after });
+      return workflow.getEvents({ after });
     },
     subscribe(subscriber) {
-      subscribers.add(subscriber);
-      return () => subscribers.delete(subscriber);
+      return workflow.subscribe(subscriber);
     },
   };
-}
-
-function selectEvents(events, { after = 0, before = 0, limit = 0 } = {}) {
-  let selected = events.filter((event) => {
-    if (after && event.seq <= after) return false;
-    if (before && event.seq >= before) return false;
-    return true;
-  });
-
-  if (limit > 0 && selected.length > limit) {
-    selected = selected.slice(selected.length - limit);
-  }
-
-  return selected;
 }
 
 function authorizeRequest(req, url, {
@@ -549,12 +412,6 @@ function writeSse(res, event) {
   res.write(`id: ${event.seq}\n`);
   res.write(`event: ${event.name}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function validateTerminalControlInput(text) {
-  if (!TERMINAL_CONTROL_PATTERN.test(text)) {
-    throw new Error("terminal input must be a single approved control key");
-  }
 }
 
 function createHistoryStore(historyFile) {
