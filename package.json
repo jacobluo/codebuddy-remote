@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "start:local-host": "node apps/local-host/src/server.mjs",
+    "start:local-host": "node apps/local-host/src/cli/server.mjs",
     "start:relay": "node apps/relay/src/server.mjs",
-    "codebuddy-remote": "node apps/local-host/src/codebuddy-remote.mjs"
+    "codebuddy-remote": "node apps/local-host/src/cli/codebuddy-remote.mjs"
   },
   "bin": {
-    "codebuddy-remote": "./apps/local-host/src/codebuddy-remote.mjs",
+    "codebuddy-remote": "./apps/local-host/src/cli/codebuddy-remote.mjs",
     "codebuddy-relay": "./apps/relay/src/server.mjs"
   },
   "workspaces": [

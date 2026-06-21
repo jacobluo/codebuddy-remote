@@ -34,12 +34,14 @@ iOS App
 
 代码位置：
 
-- `apps/local-host/src/codebuddy-remote.mjs`
-- `apps/local-host/src/terminal-cli-adapter.mjs`
-- `apps/local-host/src/local-host.mjs`
-- `apps/local-host/src/session-command-workflow.mjs`
-- `apps/local-host/src/relay-client.mjs`
-- `apps/local-host/src/relay-e2e.mjs`
+- `apps/local-host/src/cli/codebuddy-remote.mjs`
+- `apps/local-host/src/cli/server.mjs`
+- `apps/local-host/src/host/local-host.mjs`
+- `apps/local-host/src/session/session-command-workflow.mjs`
+- `apps/local-host/src/adapters/terminal-cli-adapter.mjs`
+- `apps/local-host/src/terminal/terminal-semantic-parser.mjs`
+- `apps/local-host/src/relay/relay-client.mjs`
+- `apps/local-host/src/relay/relay-e2e.mjs`
 
 已实现：
 

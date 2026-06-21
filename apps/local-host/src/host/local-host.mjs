@@ -11,10 +11,10 @@ import { dirname } from "node:path";
 
 import {
   createCommand,
-} from "../../../packages/protocol/src/index.mjs";
+} from "../../../../packages/protocol/src/index.mjs";
 import {
   createSessionCommandWorkflow,
-} from "./session-command-workflow.mjs";
+} from "../session/session-command-workflow.mjs";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",

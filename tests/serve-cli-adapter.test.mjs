@@ -5,7 +5,7 @@ import {
   ServeCliAdapter,
   extractAssistantText,
   parseSseMessages,
-} from "../apps/local-host/src/serve-cli-adapter.mjs";
+} from "../apps/local-host/src/adapters/serve-cli-adapter.mjs";
 
 test("parses ACP SSE message payloads", () => {
   const messages = parseSseMessages(`:ok

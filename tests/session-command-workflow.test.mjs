@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSessionCommandWorkflow } from "../apps/local-host/src/session-command-workflow.mjs";
-import { MockCliAdapter } from "../apps/local-host/src/mock-cli-adapter.mjs";
+import { MockCliAdapter } from "../apps/local-host/src/adapters/mock-cli-adapter.mjs";
+import { createSessionCommandWorkflow } from "../apps/local-host/src/session/session-command-workflow.mjs";
 
 test("sendPrompt records normalized user assistant and state events", async () => {
   const workflow = createSessionCommandWorkflow({

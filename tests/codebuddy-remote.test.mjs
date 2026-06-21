@@ -9,12 +9,12 @@ import {
   createRunConfig,
   formatHelp,
   isCliEntry,
-} from "../apps/local-host/src/codebuddy-remote.mjs";
+} from "../apps/local-host/src/cli/codebuddy-remote.mjs";
 
 test("codebuddy-remote exposes the expected package bin", () => {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
-  assert.equal(pkg.bin["codebuddy-remote"], "./apps/local-host/src/codebuddy-remote.mjs");
+  assert.equal(pkg.bin["codebuddy-remote"], "./apps/local-host/src/cli/codebuddy-remote.mjs");
 });
 
 test("codebuddy-remote creates a run config from the current workspace", () => {
@@ -152,7 +152,7 @@ test("pairing URL encodes relay connection details", () => {
 });
 
 test("codebuddy-remote treats a symlinked bin path as the CLI entry", () => {
-  const realScript = "/repo/apps/local-host/src/codebuddy-remote.mjs";
+  const realScript = "/repo/apps/local-host/src/cli/codebuddy-remote.mjs";
   const linkedBin = "/opt/homebrew/bin/codebuddy-remote";
 
   assert.equal(

@@ -6,9 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
 
-import { createLocalHost } from "./local-host.mjs";
-import { connectRelay } from "./relay-client.mjs";
-import { TerminalCliAdapter } from "./terminal-cli-adapter.mjs";
+import { TerminalCliAdapter } from "../adapters/terminal-cli-adapter.mjs";
+import { createLocalHost } from "../host/local-host.mjs";
+import { connectRelay } from "../relay/relay-client.mjs";
 
 export function createRunConfig({
   cwd = process.cwd(),

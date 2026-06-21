@@ -1,7 +1,7 @@
-import { createLocalHost } from "./local-host.mjs";
-import { MockCliAdapter } from "./mock-cli-adapter.mjs";
-import { RealCliAdapter } from "./real-cli-adapter.mjs";
-import { ServeCliAdapter } from "./serve-cli-adapter.mjs";
+import { MockCliAdapter } from "../adapters/mock-cli-adapter.mjs";
+import { RealCliAdapter } from "../adapters/real-cli-adapter.mjs";
+import { ServeCliAdapter } from "../adapters/serve-cli-adapter.mjs";
+import { createLocalHost } from "../host/local-host.mjs";
 
 const port = Number(process.env.CODEBUDDY_REMOTE_PORT || 17320);
 const token = process.env.CODEBUDDY_REMOTE_TOKEN || "dev-token";

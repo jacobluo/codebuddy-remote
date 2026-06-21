@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { createLocalHost } from "../apps/local-host/src/local-host.mjs";
-import { MockCliAdapter } from "../apps/local-host/src/mock-cli-adapter.mjs";
+import { MockCliAdapter } from "../apps/local-host/src/adapters/mock-cli-adapter.mjs";
+import { createLocalHost } from "../apps/local-host/src/host/local-host.mjs";
 
 async function withHost(testFn) {
   const adapter = new MockCliAdapter();

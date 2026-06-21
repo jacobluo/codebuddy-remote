@@ -106,9 +106,14 @@ CODEBUDDY_REMOTE_AUDIT_FILE=/path/to/audit.jsonl
 
 ## 目录
 
-- `apps/local-host/`：Mac 本地控制面、session command workflow 和 CLI adapter。
+- `apps/local-host/src/cli/`：`codebuddy-remote` 和本地开发 server 入口。
+- `apps/local-host/src/host/`：Mac 本地 HTTP/SSE 控制面。
+- `apps/local-host/src/session/`：session command/event workflow。
+- `apps/local-host/src/adapters/`：CodeBuddy CLI adapter。
+- `apps/local-host/src/relay/`：Relay host client 和端到端加密。
+- `apps/local-host/src/terminal/`：终端语义解析和 PTY bridge。
 - `apps/relay/`：WebSocket Relay。
-- `apps/ios/CodeBuddyRemote/`：原生 iOS App。
+- `apps/ios/CodeBuddyRemote/`：原生 iOS App，源码按 App、Conversation、Input、Pairing、Relay、Security、Terminal 等模块组织。
 - `packages/protocol/`：统一 command/event 协议。
 - `tests/`：Node 测试。
 - `docs/`：当前方案、安全流程和 archive。

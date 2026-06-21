@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   RealCliAdapter,
   parseStreamJsonLines,
-} from "../apps/local-host/src/real-cli-adapter.mjs";
+} from "../apps/local-host/src/adapters/real-cli-adapter.mjs";
 
 test("parses stream-json result and session id from real CodeBuddy output", () => {
   const parsed = parseStreamJsonLines([

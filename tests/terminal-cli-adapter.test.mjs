@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   TerminalCliAdapter,
   startPythonPtyTerminal,
-} from "../apps/local-host/src/terminal-cli-adapter.mjs";
+} from "../apps/local-host/src/adapters/terminal-cli-adapter.mjs";
 
 test("terminal CLI adapter starts the real codebuddy command through a PTY wrapper", async () => {
   const calls = [];

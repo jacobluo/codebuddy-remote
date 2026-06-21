@@ -1,7 +1,7 @@
 import {
   createEvent,
   validateCommand,
-} from "../../../packages/protocol/src/index.mjs";
+} from "../../../../packages/protocol/src/index.mjs";
 
 const TERMINAL_CONTROL_PATTERN = /^[0-9ynqYN]$/;
 

@@ -2,10 +2,10 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TerminalSemanticParser } from "./terminal-semantic-parser.mjs";
+import { TerminalSemanticParser } from "../terminal/terminal-semantic-parser.mjs";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const PTY_BRIDGE = path.join(MODULE_DIR, "pty-bridge.py");
+const PTY_BRIDGE = path.join(MODULE_DIR, "../terminal/pty-bridge.py");
 
 export class TerminalCliAdapter {
   #sessionId = "terminal-cli";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TerminalSemanticParser } from "../apps/local-host/src/terminal-semantic-parser.mjs";
+import { TerminalSemanticParser } from "../apps/local-host/src/terminal/terminal-semantic-parser.mjs";
 
 test("terminal semantic parser extracts assistant, tool, command, test, permission, and diff events", () => {
   const parser = new TerminalSemanticParser();

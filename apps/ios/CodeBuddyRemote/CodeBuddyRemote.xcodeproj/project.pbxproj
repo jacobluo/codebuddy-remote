@@ -87,23 +87,87 @@
 		111111111111111111111302 /* CodeBuddyRemote */ = {
 			isa = PBXGroup;
 			children = (
-				111111111111111111111001 /* CodeBuddyRemoteApp.swift */,
-				111111111111111111111015 /* AppState.swift */,
-				111111111111111111111002 /* AppView.swift */,
-				111111111111111111111010 /* ChatModels.swift */,
-				111111111111111111111013 /* PairingPayload.swift */,
-				111111111111111111111016 /* DeviceCredential.swift */,
-				111111111111111111111011 /* ChatMessageViews.swift */,
-				111111111111111111111012 /* ChatInputBar.swift */,
-				111111111111111111111014 /* QRCodeScannerView.swift */,
-				111111111111111111111008 /* RelayRemoteClient.swift */,
-				111111111111111111111017 /* RelayE2E.swift */,
-				111111111111111111111004 /* RemoteModels.swift */,
-				111111111111111111111005 /* TerminalScreen.swift */,
+				111111111111111111111311 /* App */,
+				111111111111111111111312 /* Conversation */,
+				111111111111111111111313 /* Input */,
+				111111111111111111111314 /* Models */,
+				111111111111111111111315 /* Pairing */,
+				111111111111111111111316 /* Relay */,
+				111111111111111111111317 /* Security */,
+				111111111111111111111318 /* Terminal */,
 				111111111111111111111009 /* Info.plist */,
 				111111111111111111111006 /* Assets.xcassets */,
 			);
 			path = CodeBuddyRemote;
+			sourceTree = "<group>";
+		};
+		111111111111111111111311 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111001 /* CodeBuddyRemoteApp.swift */,
+				111111111111111111111015 /* AppState.swift */,
+				111111111111111111111002 /* AppView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		111111111111111111111312 /* Conversation */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111010 /* ChatModels.swift */,
+				111111111111111111111011 /* ChatMessageViews.swift */,
+			);
+			path = Conversation;
+			sourceTree = "<group>";
+		};
+		111111111111111111111313 /* Input */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111012 /* ChatInputBar.swift */,
+			);
+			path = Input;
+			sourceTree = "<group>";
+		};
+		111111111111111111111314 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111004 /* RemoteModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		111111111111111111111315 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111013 /* PairingPayload.swift */,
+				111111111111111111111014 /* QRCodeScannerView.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		111111111111111111111316 /* Relay */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111008 /* RelayRemoteClient.swift */,
+				111111111111111111111017 /* RelayE2E.swift */,
+			);
+			path = Relay;
+			sourceTree = "<group>";
+		};
+		111111111111111111111317 /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111016 /* DeviceCredential.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
+		111111111111111111111318 /* Terminal */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111005 /* TerminalScreen.swift */,
+			);
+			path = Terminal;
 			sourceTree = "<group>";
 		};
 		111111111111111111111303 /* Products */ = {

@@ -4,10 +4,10 @@ import test from "node:test";
 
 import { WebSocket } from "ws";
 
-import { createLocalHost } from "../apps/local-host/src/local-host.mjs";
-import { createRelayE2EPeer } from "../apps/local-host/src/relay-e2e.mjs";
-import { connectRelay } from "../apps/local-host/src/relay-client.mjs";
-import { MockCliAdapter } from "../apps/local-host/src/mock-cli-adapter.mjs";
+import { MockCliAdapter } from "../apps/local-host/src/adapters/mock-cli-adapter.mjs";
+import { createLocalHost } from "../apps/local-host/src/host/local-host.mjs";
+import { connectRelay } from "../apps/local-host/src/relay/relay-client.mjs";
+import { createRelayE2EPeer } from "../apps/local-host/src/relay/relay-e2e.mjs";
 import { createRelayServer } from "../apps/relay/src/relay.mjs";
 import { createCommand } from "../packages/protocol/src/index.mjs";
 
