@@ -20,6 +20,7 @@
 		111111111111111111111113 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111015 /* AppState.swift */; };
 		111111111111111111111114 /* DeviceCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111016 /* DeviceCredential.swift */; };
 		111111111111111111111115 /* RelayE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111017 /* RelayE2E.swift */; };
+		111111111111111111111116 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111006 /* Assets.xcassets */; };
 		222222222222222222222101 /* ChatModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222001 /* ChatModelsTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -276,6 +277,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				111111111111111111111116 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -450,8 +452,9 @@
 		111111111111111111112003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -475,8 +478,9 @@
 		111111111111111111112004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -502,7 +506,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -527,7 +531,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
