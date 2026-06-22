@@ -7,7 +7,7 @@ struct RelayConfig: Equatable {
   var token: String
 
   static let defaultValue = RelayConfig(
-    relayURL: "ws://127.0.0.1:17330/relay",
+    relayURL: "wss://rr.codebuddyhelper.cn/relay",
     pairingCode: "",
     pairingSecret: "",
     token: ""
