@@ -1,0 +1,13 @@
+.git
+.DS_Store
+DerivedData
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+apps/ios
+apps/local-host
+docs
+reports
+tests

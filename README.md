@@ -63,6 +63,45 @@ codebuddy-remote
 
 `CODEBUDDY_REMOTE_RELAY_TOKEN` 只用于 Mac host 注册 Relay，不进入二维码，也不会由 iOS 保存。
 
+### Docker 运行 Relay
+
+Relay 可以单独打成 Docker 镜像：
+
+```sh
+docker build -f Dockerfile.relay -t codebuddy-remote-relay .
+```
+
+本机反代场景建议只绑定到服务器回环地址，再由 Caddy / Nginx 暴露 HTTPS/WSS：
+
+```sh
+docker run -d \
+  --name codebuddy-relay \
+  --restart unless-stopped \
+  -e CODEBUDDY_RELAY_TOKEN=<relay-token> \
+  -p 127.0.0.1:17330:17330 \
+  codebuddy-remote-relay
+```
+
+也可以用 Compose：
+
+```sh
+CODEBUDDY_RELAY_TOKEN=<relay-token> docker compose up -d relay
+```
+
+健康检查：
+
+```sh
+curl http://127.0.0.1:17330/health
+```
+
+Caddy 示例：
+
+```caddy
+relay.example.com {
+  reverse_proxy 127.0.0.1:17330
+}
+```
+
 ## iOS App
 
 工程位置：
